@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 最终修复版</title>
+    <title>🐉 AI跑团 · 多人实时版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -29,6 +29,13 @@
             margin-top: 0;
             margin-bottom: 15px;
         }
+        .sync-status {
+            font-size: 10px;
+            text-align: right;
+            margin-bottom: 8px;
+        }
+        .sync-online { color: #8bc34a; }
+        .sync-offline { color: #ff8a7a; }
         .join-bar {
             background: #1f2a24;
             border-radius: 60px;
@@ -89,7 +96,7 @@
         }
         .combat-log {
             background: #030807;
-            height: 400px;
+            height: 350px;
             overflow-y: auto;
             padding: 12px;
             border-radius: 16px;
@@ -130,6 +137,8 @@
         .players-tag {
             margin-top: 12px;
             font-size: 12px;
+            max-height: 80px;
+            overflow-y: auto;
         }
         .badge {
             background: #2a3b2c;
@@ -139,15 +148,18 @@
             margin: 3px;
             font-size: 11px;
         }
+        .badge.current { background: #7e6236; border: 1px solid gold; }
         .status-ok { color: #8bc34a; font-size: 11px; }
         .status-warning { color: #ffc107; font-size: 11px; }
         #sceneName { font-size: 1.3rem; font-weight: bold; }
         #sceneDesc { font-size: 13px; opacity: 0.8; margin: 5px 0; }
+        hr { border-color: #5e6e45; margin: 10px 0; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 最终修复版</h1>
+    <h1>🐉 AI跑团 · 多人实时版</h1>
+    <div class="sync-status" id="syncStatus">🔄 同步中...</div>
     <div id="apiStatus" style="text-align: right; font-size: 11px; margin-bottom: 8px;">🔍 检测中...</div>
     
     <div class="join-bar">
@@ -169,7 +181,7 @@
             <div id="sceneDesc"></div>
             <div id="enemyContainer"></div>
             <div id="playerStatsPanel" style="display: none; margin-top: 15px; background: #00000066; border-radius: 16px; padding: 10px;"></div>
-            <div class="players-tag" id="playerListDiv">👥 冒险团：</div>
+            <div class="players-tag" id="playerListDiv">👥 在线冒险团：</div>
         </div>
 
         <div class="log-box">
@@ -186,10 +198,10 @@
 <script>
     // ========== ⚙️ 配置 ==========
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    // 在这里填你的Groq API Key（以 gsk_ 开头）
-    const OPENAI_API_KEY = "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";
+    const GROQ_API_KEY = "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";  // ← 填你的Groq Key
     // ==============================
     
+    // 游戏状态
     let gameWorld = {
         sceneName: "🕯️ 诅咒墓穴",
         sceneDesc: "石壁渗血，骷髅战士从棺椁中爬出。",
@@ -203,6 +215,8 @@
     let currentPlayerId = null;
     let currentPlayer = null;
     let isActionLocked = false;
+    let syncInterval = null;
+    let lastSyncTime = 0;
     
     function addLog(msg, isAI = false) {
         const logDiv = document.getElementById("combatLog");
@@ -236,34 +250,85 @@
             hp: stats.hp, maxHp: stats.maxHp,
             mp: stats.mp, maxMp: stats.mp,
             atkBonus: stats.atkBonus, baseDmg: stats.baseDmg,
-            skillName: stats.skill
+            skillName: stats.skill,
+            lastSeen: Date.now()
         };
     }
     
-    function saveWorld() {
-        try { localStorage.setItem("ai_rpg_world", JSON.stringify({ world: gameWorld, players })); } catch(e) {}
+    // 同步世界状态到服务器
+    async function syncToServer() {
+        try {
+            await fetch(`${WORKER_URL}/state`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "updateWorld",
+                    world: gameWorld,
+                    players: players
+                })
+            });
+        } catch(err) {
+            console.log("同步到服务器失败:", err);
+        }
     }
     
-    function loadWorld() {
+    // 同步当前玩家到服务器
+    async function syncPlayerToServer() {
+        if (!currentPlayer) return;
         try {
-            const raw = localStorage.getItem("ai_rpg_world");
-            if (raw) {
-                const data = JSON.parse(raw);
-                if (data.world && data.world.enemies) gameWorld = data.world;
-                if (data.players) players = data.players;
+            await fetch(`${WORKER_URL}/state`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "updatePlayer",
+                    playerId: currentPlayer.id,
+                    playerData: currentPlayer
+                })
+            });
+        } catch(err) {
+            console.log("同步玩家失败:", err);
+        }
+    }
+    
+    // 从服务器拉取最新状态
+    async function syncFromServer() {
+        try {
+            const response = await fetch(`${WORKER_URL}/state`, {
+                method: "GET",
+                headers: { "Content-Type": "application/json" }
+            });
+            
+            if (response.ok) {
+                const remote = await response.json();
+                if (remote.world) {
+                    gameWorld = remote.world;
+                }
+                if (remote.players) {
+                    players = remote.players;
+                }
+                lastSyncTime = Date.now();
+                document.getElementById("syncStatus").innerHTML = "🟢 实时同步中";
+                document.getElementById("syncStatus").className = "sync-online";
+                renderUI();
+                renderPlayers();
+                
+                // 更新当前玩家数据
+                if (currentPlayerId && players[currentPlayerId]) {
+                    currentPlayer = players[currentPlayerId];
+                    updateStatsPanel();
+                }
             }
-        } catch(e) {}
-        if (!gameWorld.enemies || gameWorld.enemies.length === 0) {
-            gameWorld.enemies = [{ id: "goblin1", name: "👹 哥布林", hp: 40, maxHp: 40, ac: 11 }];
+        } catch(err) {
+            console.log("从服务器同步失败:", err);
+            document.getElementById("syncStatus").innerHTML = "🔴 同步断开，重连中...";
+            document.getElementById("syncStatus").className = "sync-offline";
         }
-        if (!gameWorld.sceneName) gameWorld.sceneName = "黑暗森林";
-        if (!gameWorld.sceneDesc) gameWorld.sceneDesc = "阴森的树林...";
-        renderUI();
-        renderPlayers();
-        if (currentPlayerId && players[currentPlayerId]) {
-            currentPlayer = players[currentPlayerId];
-            updateStatsPanel();
-        }
+    }
+    
+    // 启动自动同步（每1.5秒）
+    function startAutoSync() {
+        if (syncInterval) clearInterval(syncInterval);
+        syncInterval = setInterval(syncFromServer, 1500);
     }
     
     function renderUI() {
@@ -273,7 +338,7 @@
         if (sceneNameEl) sceneNameEl.innerHTML = gameWorld.sceneName;
         if (sceneDescEl) sceneDescEl.innerHTML = gameWorld.sceneDesc;
         if (!enemyContainer) return;
-        if (!gameWorld.enemies.length) {
+        if (!gameWorld.enemies || gameWorld.enemies.length === 0) {
             enemyContainer.innerHTML = "<div style='background:#28523b; border-radius: 20px; padding:12px;'>✅ 魔物已被击退！</div>";
             return;
         }
@@ -287,9 +352,12 @@
     function renderPlayers() {
         const div = document.getElementById("playerListDiv");
         if (!div) return;
-        let names = Object.values(players).map(p => `<span class="badge">${p.name}(${p.class}) ❤️${p.hp}</span>`);
+        let names = Object.values(players).map(p => {
+            const isCurrent = currentPlayerId === p.id;
+            return `<span class="badge ${isCurrent ? 'current' : ''}">${p.name}(${p.class}) ❤️${p.hp}</span>`;
+        });
         if (names.length === 0) names = ["暂无旅伴"];
-        div.innerHTML = `👥 冒险团： ${names.join(' ')}`;
+        div.innerHTML = `👥 在线冒险团 (${Object.keys(players).length}人)： ${names.join(' ')}`;
     }
     
     function updateStatsPanel() {
@@ -310,31 +378,24 @@
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${OPENAI_API_KEY}`
+                    "Authorization": `Bearer ${GROQ_API_KEY}`
                 },
                 body: JSON.stringify({
-                    model: "llama-3.3-70b-versatile",
+                    action: "callAI",
                     messages: [
                         { role: "system", content: "你是DND地下城主，擅长写简短的战斗描述。" },
                         { role: "user", content: prompt }
-                    ],
-                    temperature: 0.8,
-                    max_tokens: 100
+                    ]
                 })
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             
             if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
                 return data.choices[0].message.content.trim();
             }
-            
             throw new Error("响应格式异常");
-            
         } catch(err) {
             console.error("AI错误:", err);
             if (hitResult.includes("命中")) {
@@ -349,7 +410,7 @@
         if (isActionLocked) { systemMsg("请等待..."); return; }
         if (!currentPlayer) { systemMsg("请先加入游戏"); return; }
         if (currentPlayer.hp <= 0) { systemMsg("你已经倒下"); return; }
-        if (!gameWorld.enemies.length) { systemMsg("没有敌人了"); return; }
+        if (!gameWorld.enemies || gameWorld.enemies.length === 0) { systemMsg("没有敌人了"); return; }
         
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) return;
@@ -373,21 +434,30 @@
                 target.hp -= damage;
             }
             
-            players[currentPlayer.id] = currentPlayer;
             gameWorld.enemies = gameWorld.enemies.filter(e => e.hp > 0);
             
-            addLog(`🎲 掷出${dice}+${currentPlayer.atkBonus}=${attackRoll} vs AC${targetAC} → ${isHit ? "命中" : "未命中"} 伤害${damage}`, false);
+            if (isHit && damage > 0) {
+                currentPlayer.hp -= 5; // 轻微反击伤害
+                if (currentPlayer.hp < 0) currentPlayer.hp = 0;
+            }
+            
+            players[currentPlayer.id] = currentPlayer;
+            
+            addLog(`🎲 ${currentPlayer.name} 掷出${dice}+${currentPlayer.atkBonus}=${attackRoll} vs AC${targetAC} → ${isHit ? "命中" : "未命中"} 伤害${damage}`, false);
             
             const aiText = await callAI(currentPlayer, actionText, dice, isHit ? "命中" : "未命中", damage, target.name);
             addLog(aiText, true);
             
+            // 同步到服务器
+            await syncToServer();
+            await syncPlayerToServer();
+            
             renderUI();
             updateStatsPanel();
             renderPlayers();
-            saveWorld();
             
             if (gameWorld.enemies.length === 0) {
-                addLog("🏆 战斗胜利！", true);
+                addLog("🏆 战斗胜利！所有玩家共享这份荣耀！", true);
             }
             
             if (currentPlayer.hp <= 0) {
@@ -396,8 +466,8 @@
                 currentPlayer = null;
                 currentPlayerId = null;
                 document.getElementById("playerStatsPanel").style.display = "none";
+                await syncToServer();
                 renderPlayers();
-                saveWorld();
             }
             
         } finally {
@@ -408,19 +478,22 @@
         }
     }
     
-    function joinGame() {
+    async function joinGame() {
         let name = document.getElementById("playerName").value.trim();
         if (!name) name = "冒险者";
         const job = document.getElementById("playerClass").value;
         const newP = createPlayer(name, job);
-        players[newP.id] = newP;
         currentPlayerId = newP.id;
         currentPlayer = newP;
+        players[newP.id] = newP;
+        
+        await syncPlayerToServer();
+        await syncToServer();
+        
         updateStatsPanel();
         renderPlayers();
-        saveWorld();
-        systemMsg(`${newP.name} 加入冒险！`);
-        addLog(`✨ ${newP.name} 踏入了这片危险的土地。`, true);
+        systemMsg(`${newP.name} 加入了冒险团！`);
+        addLog(`✨ ${newP.name} 从迷雾中走来，与${Object.keys(players).length}位冒险者会合。`, true);
     }
     
     function toggleStats() {
@@ -430,18 +503,18 @@
     
     async function testWorker() {
         const statusDiv = document.getElementById("apiStatus");
-        statusDiv.innerHTML = "🔄 测试Worker...";
+        statusDiv.innerHTML = "🔄 测试连接...";
         try {
-            const response = await fetch(WORKER_URL, { method: "OPTIONS" });
-            if (response.status === 204 || response.status === 200) {
-                statusDiv.innerHTML = "✅ Worker已连接，AI就绪";
+            const response = await fetch(`${WORKER_URL}/state`, { method: "GET" });
+            if (response.ok) {
+                statusDiv.innerHTML = "✅ 多人模式已启用，实时同步中";
                 statusDiv.className = "status-ok";
             } else {
-                statusDiv.innerHTML = "✅ Worker在线";
-                statusDiv.className = "status-ok";
+                statusDiv.innerHTML = "⚠️ Worker连接异常";
+                statusDiv.className = "status-warning";
             }
         } catch(err) {
-            statusDiv.innerHTML = "⚠️ Worker连接失败";
+            statusDiv.innerHTML = "⚠️ 连接中...";
             statusDiv.className = "status-warning";
         }
     }
@@ -451,9 +524,11 @@
     document.getElementById("actBtn").onclick = takeAction;
     document.getElementById("actionInput").addEventListener("keypress", (e) => { if(e.key === "Enter") takeAction(); });
     
-    loadWorld();
+    // 初始化
+    startAutoSync();
     testWorker();
-    addLog("🔥 AI跑团已启动！", true);
+    addLog("🔥 多人实时模式已启动！所有玩家共享同一个世界，行动实时同步！", true);
+    addLog("💡 提示：打开两个浏览器窗口登录不同角色，互相配合战斗！", false);
 </script>
 </body>
 </html>
