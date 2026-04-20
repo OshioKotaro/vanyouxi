@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 清爽版</title>
+    <title>🐉 AI跑团 · 测试版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -140,7 +140,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 清爽版</h1>
+    <h1>🐉 AI跑团 · 测试版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -151,7 +151,7 @@
         <h3>✨ 创建新角色</h3>
         <div class="form-group">
             <label>角色名</label>
-            <input type="text" id="playerName" placeholder="输入名字">
+            <input type="text" id="playerName" placeholder="输入名字" value="冒险者">
         </div>
         <div class="form-group">
             <label>职业</label>
@@ -207,7 +207,6 @@
     let currentRoom = null;
     let syncInterval = null;
     let gameActive = false;
-    let lastMessageId = 0;
     
     function showPanel(name) {
         document.getElementById("loginPanel").classList.add("hidden");
@@ -216,7 +215,7 @@
         document.getElementById(name + "Panel").classList.remove("hidden");
     }
     
-    function addLog(content, type = "system", skipSync = false) {
+    function addLog(content, type = "system") {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return;
         const p = document.createElement("p");
@@ -224,10 +223,6 @@
         p.innerHTML = `<span class="${cls}">${content}</span>`;
         logDiv.appendChild(p);
         p.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        
-        if (!skipSync && currentPlayer) {
-            api("addMessage", { type, playerName: currentPlayer.name, content });
-        }
     }
     
     async function api(action, data) {
@@ -239,6 +234,7 @@
             });
             return await res.json();
         } catch(e) {
+            console.error("API错误:", e);
             return { success: false, error: e.message };
         }
     }
@@ -253,11 +249,11 @@
             currentPlayer = res.player;
             localStorage.setItem("playerId", currentPlayer.id);
             document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
-            // 不自动加日志，避免刷屏
+            addLog(`欢迎，${currentPlayer.name}！`, "system");
             showPanel("room");
             await refreshState();
         } else {
-            alert("创建失败");
+            alert("创建失败: " + JSON.stringify(res));
         }
     };
     
@@ -270,6 +266,7 @@
             currentPlayer = res.player;
             localStorage.setItem("playerId", currentPlayer.id);
             document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
+            addLog(`欢迎回来，${currentPlayer.name}！`, "system");
             showPanel("room");
             await refreshState();
         } else {
@@ -290,9 +287,8 @@
                 gameActive = true;
                 showPanel("game");
                 renderGameUI();
-                if (currentRoom.currentScene && !window._sceneShown) {
-                    addLog(currentRoom.currentScene, "ai", true);
-                    window._sceneShown = true;
+                if (currentRoom.currentScene) {
+                    addLog(currentRoom.currentScene, "ai");
                 }
             } else if (currentRoom.status === "waiting") {
                 renderRoomUI();
@@ -300,7 +296,6 @@
                 renderGameUI();
             }
         } else {
-            // 不在房间，显示创建房间界面
             document.getElementById("roomInfo").innerHTML = "<div>暂无房间</div>";
             document.getElementById("roomPlayerList").innerHTML = "";
             document.getElementById("roomActions").innerHTML = `<button id="createRoomBtn">➕ 创建新房间</button>`;
@@ -314,7 +309,7 @@
             currentRoom = res.room;
             await refreshState();
         } else {
-            alert("创建失败");
+            alert("创建失败: " + res.error);
         }
     }
     
@@ -342,11 +337,10 @@
         if (res.success) {
             currentRoom = res.room;
             gameActive = true;
-            window._sceneShown = false;
             showPanel("game");
             renderGameUI();
-            addLog(currentRoom.currentScene, "ai", true);
-            addLog(`敌人出现: ${currentRoom.enemies.map(e=>e.name).join(", ")}`, "action", true);
+            addLog(currentRoom.currentScene, "ai");
+            addLog(`敌人出现: ${currentRoom.enemies.map(e=>e.name).join(", ")}`, "action");
         } else {
             alert("开始失败: " + res.error);
         }
@@ -408,11 +402,11 @@
     
     async function takeAction() {
         if (!currentRoom || currentRoom.turn !== currentPlayer.id) {
-            addLog("现在不是你的回合", "system", true);
+            addLog("现在不是你的回合", "system");
             return;
         }
         if (!currentRoom.enemies || currentRoom.enemies.length === 0) {
-            addLog("没有敌人了", "system", true);
+            addLog("没有敌人了", "system");
             return;
         }
         const actionText = document.getElementById("actionInput").value;
@@ -445,18 +439,18 @@
                 turn: nextTurn
             });
             
-            addLog(`${currentPlayer.name} 掷出 ${dice}，${isHit ? "命中 " + damage + " 伤害" : "未命中"}`, "action", true);
-            addLog(`${currentPlayer.name} ${isHit ? `击中了${target.name}` : `攻击被${target.name}闪避`}`, "ai", true);
+            addLog(`${currentPlayer.name} 掷出 ${dice}，${isHit ? "命中 " + damage + " 伤害" : "未命中"}`, "action");
+            addLog(`${currentPlayer.name} ${isHit ? `击中了${target.name}` : `攻击被${target.name}闪避`}`, "ai");
             
             await refreshState();
             renderGameUI();
             
             if (newEnemies.length === 0) {
-                addLog("🏆 战斗胜利！", "ai", true);
+                addLog("🏆 战斗胜利！", "ai");
                 gameActive = false;
             }
         } catch(e) {
-            addLog("行动失败", "system", true);
+            addLog("行动失败", "system");
         } finally {
             btn.disabled = false;
             btn.textContent = "行动";
@@ -464,7 +458,7 @@
         }
     }
     
-    // 自动同步
+    // 同步循环
     async function syncLoop() {
         try {
             const res = await fetch(`${WORKER_URL}/state`);
@@ -481,26 +475,11 @@
                         gameActive = true;
                         showPanel("game");
                         renderGameUI();
-                        if (currentRoom.currentScene && !window._sceneShown) {
-                            addLog(currentRoom.currentScene, "ai", true);
-                            window._sceneShown = true;
-                        }
+                        if (currentRoom.currentScene) addLog(currentRoom.currentScene, "ai");
                     } else if (currentRoom.status === "waiting") {
                         renderRoomUI();
                     } else if (gameActive) {
                         renderGameUI();
-                    }
-                }
-            }
-            // 处理新消息（避免重复）
-            if (data.messages && data.messages.length) {
-                for (let msg of data.messages) {
-                    if (msg.id > lastMessageId) {
-                        lastMessageId = msg.id;
-                        // 只显示其他人或系统消息
-                        if (msg.playerName !== currentPlayer?.name || msg.type !== "action") {
-                            addLog(msg.content, msg.type, true);
-                        }
                     }
                 }
             }
@@ -515,12 +494,10 @@
     document.getElementById("actBtn").onclick = takeAction;
     document.getElementById("actionInput").addEventListener("keypress", (e) => { if(e.key === "Enter") takeAction(); });
     
-    // 启动同步
+    // 启动
     syncInterval = setInterval(syncLoop, 1500);
-    
-    // 初始界面：登录
     showPanel("login");
-    addLog("欢迎来到 AI 跑团！请创建或恢复角色。", "system", true);
+    addLog("欢迎来到 AI 跑团！请创建或恢复角色。", "system");
 </script>
 </body>
 </html>
