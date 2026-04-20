@@ -114,6 +114,13 @@
             padding: 5px;
             border-radius: 10px;
         }
+        .other-narration {
+            color: #a8d8ff;
+            font-style: italic;
+            background: #1a2a3e30;
+            padding: 5px;
+            border-radius: 10px;
+        }
         .action-area {
             margin-top: 12px;
             display: flex;
@@ -154,6 +161,7 @@
         #sceneName { font-size: 1.3rem; font-weight: bold; }
         #sceneDesc { font-size: 13px; opacity: 0.8; margin: 5px 0; }
         hr { border-color: #5e6e45; margin: 10px 0; }
+        .player-name { color: #e6b873; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -185,7 +193,7 @@
         </div>
 
         <div class="log-box">
-            <div style="font-weight: bold;">📜 AI 口述史</div>
+            <div style="font-weight: bold;">📜 战斗记录（所有人可见）</div>
             <div id="combatLog" class="combat-log"></div>
             <div class="action-area">
                 <input id="actionInput" placeholder="🔮 挥剑斩敌 / 火球术" autocomplete="off">
@@ -196,12 +204,9 @@
 </div>
 
 <script>
-    // ========== ⚙️ 配置 ==========
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
     const GROQ_API_KEY = "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";  // ← 填你的Groq Key
-    // ==============================
     
-    // 游戏状态
     let gameWorld = {
         sceneName: "🕯️ 诅咒墓穴",
         sceneDesc: "石壁渗血，骷髅战士从棺椁中爬出。",
@@ -216,14 +221,19 @@
     let currentPlayer = null;
     let isActionLocked = false;
     let syncInterval = null;
-    let lastSyncTime = 0;
+    let lastMessageCount = 0;
+    let displayedMessageIds = new Set();
     
-    function addLog(msg, isAI = false) {
+    function addLog(msg, isAI = false, playerName = null, isOwn = true) {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return;
         const p = document.createElement("p");
         if (isAI) {
-            p.innerHTML = `🎭 <span class="ai-narration">✨ ${msg}</span>`;
+            if (isOwn) {
+                p.innerHTML = `🎭 <span class="ai-narration">✨ ${msg}</span>`;
+            } else {
+                p.innerHTML = `🎭 <span class="other-narration">📖 [${playerName}] ${msg}</span>`;
+            }
         } else {
             p.innerHTML = `📢 ${msg}`;
         }
@@ -255,7 +265,6 @@
         };
     }
     
-    // 同步世界状态到服务器
     async function syncToServer() {
         try {
             await fetch(`${WORKER_URL}/state`, {
@@ -267,12 +276,9 @@
                     players: players
                 })
             });
-        } catch(err) {
-            console.log("同步到服务器失败:", err);
-        }
+        } catch(err) { console.log("同步失败:", err); }
     }
     
-    // 同步当前玩家到服务器
     async function syncPlayerToServer() {
         if (!currentPlayer) return;
         try {
@@ -285,12 +291,23 @@
                     playerData: currentPlayer
                 })
             });
-        } catch(err) {
-            console.log("同步玩家失败:", err);
-        }
+        } catch(err) { console.log("同步玩家失败:", err); }
     }
     
-    // 从服务器拉取最新状态
+    async function addGlobalMessage(message, playerName) {
+        try {
+            await fetch(`${WORKER_URL}/state`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "addMessage",
+                    playerName: playerName,
+                    message: message
+                })
+            });
+        } catch(err) { console.log("添加消息失败:", err); }
+    }
+    
     async function syncFromServer() {
         try {
             const response = await fetch(`${WORKER_URL}/state`, {
@@ -300,32 +317,37 @@
             
             if (response.ok) {
                 const remote = await response.json();
-                if (remote.world) {
-                    gameWorld = remote.world;
+                if (remote.world) gameWorld = remote.world;
+                if (remote.players) players = remote.players;
+                
+                // 处理新消息
+                if (remote.messages && remote.messages.length > 0) {
+                    for (const msg of remote.messages) {
+                        if (!displayedMessageIds.has(msg.id)) {
+                            displayedMessageIds.add(msg.id);
+                            const isOwn = (msg.player === currentPlayer?.name);
+                            addLog(msg.content, true, msg.player, isOwn);
+                        }
+                    }
                 }
-                if (remote.players) {
-                    players = remote.players;
-                }
-                lastSyncTime = Date.now();
+                
                 document.getElementById("syncStatus").innerHTML = "🟢 实时同步中";
                 document.getElementById("syncStatus").className = "sync-online";
                 renderUI();
                 renderPlayers();
                 
-                // 更新当前玩家数据
                 if (currentPlayerId && players[currentPlayerId]) {
                     currentPlayer = players[currentPlayerId];
                     updateStatsPanel();
                 }
             }
         } catch(err) {
-            console.log("从服务器同步失败:", err);
-            document.getElementById("syncStatus").innerHTML = "🔴 同步断开，重连中...";
+            console.log("同步失败:", err);
+            document.getElementById("syncStatus").innerHTML = "🔴 同步断开";
             document.getElementById("syncStatus").className = "sync-offline";
         }
     }
     
-    // 启动自动同步（每1.5秒）
     function startAutoSync() {
         if (syncInterval) clearInterval(syncInterval);
         syncInterval = setInterval(syncFromServer, 1500);
@@ -381,7 +403,6 @@
                     "Authorization": `Bearer ${GROQ_API_KEY}`
                 },
                 body: JSON.stringify({
-                    action: "callAI",
                     messages: [
                         { role: "system", content: "你是DND地下城主，擅长写简短的战斗描述。" },
                         { role: "user", content: prompt }
@@ -437,18 +458,21 @@
             gameWorld.enemies = gameWorld.enemies.filter(e => e.hp > 0);
             
             if (isHit && damage > 0) {
-                currentPlayer.hp -= 5; // 轻微反击伤害
+                currentPlayer.hp -= 5;
                 if (currentPlayer.hp < 0) currentPlayer.hp = 0;
             }
             
             players[currentPlayer.id] = currentPlayer;
             
-            addLog(`🎲 ${currentPlayer.name} 掷出${dice}+${currentPlayer.atkBonus}=${attackRoll} vs AC${targetAC} → ${isHit ? "命中" : "未命中"} 伤害${damage}`, false);
-            
             const aiText = await callAI(currentPlayer, actionText, dice, isHit ? "命中" : "未命中", damage, target.name);
-            addLog(aiText, true);
+            const fullMessage = `${aiText}`;
             
-            // 同步到服务器
+            // 添加到本地日志
+            addLog(`🎲 ${currentPlayer.name} 掷出${dice}+${currentPlayer.atkBonus}=${attackRoll} vs AC${targetAC} → ${isHit ? "命中" : "未命中"} 伤害${damage}`, false);
+            addLog(fullMessage, true, currentPlayer.name, true);
+            
+            // 同步到服务器，让其他玩家看到
+            await addGlobalMessage(fullMessage, currentPlayer.name);
             await syncToServer();
             await syncPlayerToServer();
             
@@ -457,7 +481,9 @@
             renderPlayers();
             
             if (gameWorld.enemies.length === 0) {
-                addLog("🏆 战斗胜利！所有玩家共享这份荣耀！", true);
+                const victoryMsg = "🏆 战斗胜利！所有玩家共享这份荣耀！";
+                addLog(victoryMsg, true);
+                await addGlobalMessage(victoryMsg, "系统");
             }
             
             if (currentPlayer.hp <= 0) {
@@ -493,7 +519,7 @@
         updateStatsPanel();
         renderPlayers();
         systemMsg(`${newP.name} 加入了冒险团！`);
-        addLog(`✨ ${newP.name} 从迷雾中走来，与${Object.keys(players).length}位冒险者会合。`, true);
+        await addGlobalMessage(`✨ ${newP.name} 从迷雾中走来，加入了冒险团！`, "系统");
     }
     
     function toggleStats() {
@@ -524,11 +550,9 @@
     document.getElementById("actBtn").onclick = takeAction;
     document.getElementById("actionInput").addEventListener("keypress", (e) => { if(e.key === "Enter") takeAction(); });
     
-    // 初始化
     startAutoSync();
     testWorker();
-    addLog("🔥 多人实时模式已启动！所有玩家共享同一个世界，行动实时同步！", true);
-    addLog("💡 提示：打开两个浏览器窗口登录不同角色，互相配合战斗！", false);
+    addLog("🔥 多人实时模式已启动！所有人的战斗记录都会显示在这里！", true);
 </script>
 </body>
 </html>
