@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 多人实时版</title>
+    <title>🐉 AI跑团 · 多人回合制</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -15,51 +15,42 @@
             margin: 0;
         }
         .container {
-            max-width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
             background: rgba(0,0,0,0.6);
             border-radius: 24px;
             padding: 16px;
             border: 1px solid #c4a46e;
         }
-        h1 {
-            font-size: 1.6rem;
-            font-family: 'Georgia', serif;
-            border-left: 5px solid #e6b873;
-            padding-left: 15px;
-            margin-top: 0;
-            margin-bottom: 15px;
-        }
-        .sync-status {
-            font-size: 10px;
-            text-align: right;
-            margin-bottom: 8px;
+        h1 { font-size: 1.5rem; margin: 0 0 15px 0; text-align: center; }
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            margin-bottom: 12px;
+            padding: 6px 10px;
+            background: #1a2a24;
+            border-radius: 20px;
         }
         .sync-online { color: #8bc34a; }
         .sync-offline { color: #ff8a7a; }
-        .join-bar {
-            background: #1f2a24;
-            border-radius: 60px;
-            padding: 12px 15px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
+        
+        .panel {
+            background: #0e1815cc;
+            border-radius: 20px;
+            padding: 15px;
             margin-bottom: 15px;
-            align-items: flex-end;
         }
-        .field {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex: 1;
-        }
-        .field label { font-size: 11px; letter-spacing: 2px; color: #dbb86b; }
+        
+        .form-group { margin-bottom: 12px; }
+        label { display: block; font-size: 12px; margin-bottom: 4px; color: #dbb86b; }
         input, select {
+            width: 100%;
             background: #2c3b32;
             border: 1px solid #b48c48;
             padding: 10px 12px;
             border-radius: 40px;
             color: #f2e5c6;
-            font-family: monospace;
             font-size: 14px;
         }
         button {
@@ -71,132 +62,153 @@
             color: #fff0d4;
             cursor: pointer;
             font-size: 14px;
+            width: 100%;
         }
         button:hover { background: #a47e42; }
-        button:disabled { opacity: 0.5; }
-        .game-row {
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .room-code {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            background: #1a2a24;
+            padding: 12px;
+            border-radius: 16px;
+            letter-spacing: 4px;
+            margin: 10px 0;
+        }
+        
+        .player-list {
             display: flex;
-            flex-direction: column;
-            gap: 15px;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 12px 0;
         }
-        .scene-box, .log-box {
-            background: #0e1815cc;
-            border-radius: 20px;
-            padding: 15px;
+        .player-card {
+            background: #2a3b2c;
+            padding: 8px 12px;
+            border-radius: 40px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
+        .player-card.ready { background: #4a6b3c; border: 1px solid #8bc34a; }
+        .player-card.host { border: 1px solid gold; }
+        .ready-badge { font-size: 10px; color: #8bc34a; }
+        
         .enemy-card {
             background: #2a221ab3;
-            margin: 10px 0;
+            margin: 8px 0;
             padding: 10px 15px;
             border-radius: 60px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap;
         }
+        
         .combat-log {
             background: #030807;
-            height: 350px;
+            height: 300px;
             overflow-y: auto;
             padding: 12px;
             border-radius: 16px;
-            font-size: 14px;
+            font-size: 13px;
         }
         .combat-log p {
-            margin: 8px 0;
+            margin: 6px 0;
             border-left: 3px solid #dba450;
             padding-left: 10px;
         }
-        .ai-narration {
-            color: #f7e6b0;
-            font-style: italic;
-            background: #1e2a1e30;
-            padding: 5px;
-            border-radius: 10px;
-        }
-        .other-narration {
-            color: #a8d8ff;
-            font-style: italic;
-            background: #1a2a3e30;
-            padding: 5px;
-            border-radius: 10px;
-        }
+        .ai-narration { color: #f7e6b0; font-style: italic; }
+        .action-narration { color: #ffaa66; }
+        .system-narration { color: #aaa; font-size: 11px; }
+        
         .action-area {
-            margin-top: 12px;
             display: flex;
             gap: 10px;
-            flex-wrap: wrap;
-        }
-        #actionInput {
-            flex: 3;
-            background: #1c2b25;
-            border: 1px solid #c4a060;
-            padding: 12px;
-            border-radius: 60px;
-            color: #f7efcf;
-            font-size: 14px;
-        }
-        #actBtn {
-            flex: 1;
-            background: #9e6f3e;
-            font-size: 16px;
-        }
-        .players-tag {
             margin-top: 12px;
-            font-size: 12px;
-            max-height: 80px;
-            overflow-y: auto;
         }
-        .badge {
-            background: #2a3b2c;
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 30px;
-            margin: 3px;
-            font-size: 11px;
+        #actionInput { flex: 3; background: #1c2b25; border: 1px solid #c4a060; padding: 12px; border-radius: 60px; color: #f7efcf; }
+        #actBtn { flex: 1; background: #9e6f3e; }
+        
+        .turn-indicator {
+            background: #7e6236;
+            padding: 8px;
+            border-radius: 40px;
+            text-align: center;
+            font-size: 13px;
+            margin-bottom: 12px;
         }
-        .badge.current { background: #7e6236; border: 1px solid gold; }
-        .status-ok { color: #8bc34a; font-size: 11px; }
-        .status-warning { color: #ffc107; font-size: 11px; }
-        #sceneName { font-size: 1.3rem; font-weight: bold; }
-        #sceneDesc { font-size: 13px; opacity: 0.8; margin: 5px 0; }
-        hr { border-color: #5e6e45; margin: 10px 0; }
-        .player-name { color: #e6b873; font-weight: bold; }
+        
+        .hidden { display: none; }
+        
+        hr { border-color: #5e6e45; margin: 15px 0; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 多人实时版</h1>
-    <div class="sync-status" id="syncStatus">🔄 同步中...</div>
-    <div id="apiStatus" style="text-align: right; font-size: 11px; margin-bottom: 8px;">🔍 检测中...</div>
+    <h1>🐉 AI跑团 · 多人回合制</h1>
+    <div class="status-bar">
+        <span id="syncStatus">🔄 连接中...</span>
+        <span id="playerNameDisplay"></span>
+    </div>
     
-    <div class="join-bar">
-        <div class="field"><label>🧝 角色名</label><input type="text" id="playerName" value="冒险者"></div>
-        <div class="field"><label>⚔️ 职业</label>
+    <!-- 登录/创建角色界面 -->
+    <div id="loginPanel" class="panel">
+        <h3>✨ 创建冒险者</h3>
+        <div class="form-group">
+            <label>🧝 角色名</label>
+            <input type="text" id="playerName" placeholder="输入你的名字">
+        </div>
+        <div class="form-group">
+            <label>⚔️ 职业</label>
             <select id="playerClass">
-                <option value="战士">🗡️ 战士</option>
-                <option value="法师">🔮 法师</option>
-                <option value="游侠">🏹 游侠</option>
+                <option value="战士">🗡️ 战士 - 高血高攻</option>
+                <option value="法师">🔮 法师 - 魔法攻击</option>
+                <option value="游侠">🏹 游侠 - 精准射击</option>
             </select>
         </div>
-        <button id="joinBtn">✨ 加入</button>
-        <button id="statsBtn">📖 面板</button>
-    </div>
-
-    <div class="game-row">
-        <div class="scene-box">
-            <div id="sceneName">加载中...</div>
-            <div id="sceneDesc"></div>
-            <div id="enemyContainer"></div>
-            <div id="playerStatsPanel" style="display: none; margin-top: 15px; background: #00000066; border-radius: 16px; padding: 10px;"></div>
-            <div class="players-tag" id="playerListDiv">👥 在线冒险团：</div>
+        <button id="createPlayerBtn">✨ 创建角色</button>
+        <hr>
+        <h3>🔑 或恢复已有角色</h3>
+        <div class="form-group">
+            <label>🆔 角色ID</label>
+            <input type="text" id="restoreId" placeholder="粘贴你的角色ID">
         </div>
-
-        <div class="log-box">
-            <div style="font-weight: bold;">📜 战斗记录（所有人可见）</div>
+        <button id="restorePlayerBtn">📀 恢复角色</button>
+    </div>
+    
+    <!-- 房间界面 -->
+    <div id="roomPanel" class="panel hidden">
+        <h3>🏠 冒险者大厅</h3>
+        <div id="roomInfo"></div>
+        <div class="player-list" id="roomPlayerList"></div>
+        <div id="roomActions"></div>
+        <div class="form-group">
+            <label>🔗 加入房间</label>
+            <div style="display: flex; gap: 8px;">
+                <input type="text" id="joinRoomCode" placeholder="输入房间码">
+                <button id="joinRoomBtn" style="width: auto;">加入</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 游戏界面 -->
+    <div id="gamePanel" class="panel hidden">
+        <div id="turnIndicator" class="turn-indicator">🎲 等待游戏开始...</div>
+        <div id="sceneInfo">
+            <div id="sceneName" style="font-size: 1.2rem; font-weight: bold;">加载中...</div>
+            <div id="sceneDesc" style="font-size: 13px; opacity: 0.8;"></div>
+        </div>
+        <div id="enemyContainer"></div>
+        <div id="playerStatsPanel" style="margin-top: 12px; background: #00000066; border-radius: 16px; padding: 10px;"></div>
+        
+        <div style="margin-top: 15px;">
+            <div style="font-weight: bold;">📜 冒险记录</div>
             <div id="combatLog" class="combat-log"></div>
-            <div class="action-area">
-                <input id="actionInput" placeholder="🔮 挥剑斩敌 / 火球术" autocomplete="off">
+            <div class="action-area" id="actionArea">
+                <input id="actionInput" placeholder="🔮 描述你的行动..." autocomplete="off">
                 <button id="actBtn">🎲 行动</button>
             </div>
         </div>
@@ -204,355 +216,412 @@
 </div>
 
 <script>
+    // ========== 配置 ==========
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    const GROQ_API_KEY = "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";  // ← 填你的Groq Key
+    const GROQ_API_KEY = "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";  // ← 填你的 Groq Key
+    // =========================
     
-    let gameWorld = {
-        sceneName: "🕯️ 诅咒墓穴",
-        sceneDesc: "石壁渗血，骷髅战士从棺椁中爬出。",
-        enemies: [
-            { id: "skull1", name: "💀 骷髅剑士", hp: 45, maxHp: 45, ac: 12 },
-            { id: "skull2", name: "🏹 骷髅射手", hp: 32, maxHp: 32, ac: 11 }
-        ]
-    };
-    
-    let players = {};
-    let currentPlayerId = null;
     let currentPlayer = null;
-    let isActionLocked = false;
+    let currentRoom = null;
     let syncInterval = null;
-    let lastMessageCount = 0;
+    let myTurn = false;
+    let gameActive = false;
     let displayedMessageIds = new Set();
     
-    function addLog(msg, isAI = false, playerName = null, isOwn = true) {
+    // 辅助函数
+    function showPanel(panelName) {
+        document.getElementById("loginPanel").classList.add("hidden");
+        document.getElementById("roomPanel").classList.add("hidden");
+        document.getElementById("gamePanel").classList.add("hidden");
+        document.getElementById(panelName + "Panel").classList.remove("hidden");
+    }
+    
+    function addLog(content, type = "system", playerName = null) {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return;
         const p = document.createElement("p");
-        if (isAI) {
-            if (isOwn) {
-                p.innerHTML = `🎭 <span class="ai-narration">✨ ${msg}</span>`;
-            } else {
-                p.innerHTML = `🎭 <span class="other-narration">📖 [${playerName}] ${msg}</span>`;
-            }
+        const typeClass = type === "ai" ? "ai-narration" : (type === "action" ? "action-narration" : "system-narration");
+        if (type === "ai") {
+            p.innerHTML = `🎭 <span class="${typeClass}">✨ ${content}</span>`;
+        } else if (type === "action") {
+            p.innerHTML = `⚔️ <span class="${typeClass}">${content}</span>`;
         } else {
-            p.innerHTML = `📢 ${msg}`;
+            p.innerHTML = `📢 <span class="${typeClass}">${content}</span>`;
         }
         logDiv.appendChild(p);
         p.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-    
-    function systemMsg(msg) { addLog(`[系统] ${msg}`, false); }
-    function d20() { return Math.floor(Math.random() * 20) + 1; }
-    function damageRoll(base) { return Math.floor(Math.random() * base) + 4; }
-    
-    function getClassAttrs(job) {
-        if (job === "战士") return { hp: 110, maxHp: 110, mp: 20, atkBonus: 12, baseDmg: 10, skill: "破甲斩" };
-        if (job === "法师") return { hp: 72, maxHp: 72, mp: 80, atkBonus: 6, baseDmg: 7, skill: "炎爆术" };
-        if (job === "游侠") return { hp: 88, maxHp: 88, mp: 40, atkBonus: 10, baseDmg: 9, skill: "穿云箭" };
-        return { hp: 85, maxHp: 85, mp: 35, atkBonus: 8, baseDmg: 8, skill: "攻击" };
-    }
-    
-    function createPlayer(name, job) {
-        const stats = getClassAttrs(job);
-        const id = Date.now() + "-" + name + Math.random().toString(36).substr(2, 5);
-        return {
-            id, name, class: job,
-            hp: stats.hp, maxHp: stats.maxHp,
-            mp: stats.mp, maxMp: stats.mp,
-            atkBonus: stats.atkBonus, baseDmg: stats.baseDmg,
-            skillName: stats.skill,
-            lastSeen: Date.now()
-        };
-    }
-    
-    async function syncToServer() {
-        try {
-            await fetch(`${WORKER_URL}/state`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    action: "updateWorld",
-                    world: gameWorld,
-                    players: players
-                })
-            });
-        } catch(err) { console.log("同步失败:", err); }
-    }
-    
-    async function syncPlayerToServer() {
-        if (!currentPlayer) return;
-        try {
-            await fetch(`${WORKER_URL}/state`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    action: "updatePlayer",
-                    playerId: currentPlayer.id,
-                    playerData: currentPlayer
-                })
-            });
-        } catch(err) { console.log("同步玩家失败:", err); }
-    }
-    
-    async function addGlobalMessage(message, playerName) {
-        try {
-            await fetch(`${WORKER_URL}/state`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    action: "addMessage",
-                    playerName: playerName,
-                    message: message
-                })
-            });
-        } catch(err) { console.log("添加消息失败:", err); }
-    }
-    
-    async function syncFromServer() {
-        try {
-            const response = await fetch(`${WORKER_URL}/state`, {
-                method: "GET",
-                headers: { "Content-Type": "application/json" }
-            });
-            
-            if (response.ok) {
-                const remote = await response.json();
-                if (remote.world) gameWorld = remote.world;
-                if (remote.players) players = remote.players;
-                
-                // 处理新消息
-                if (remote.messages && remote.messages.length > 0) {
-                    for (const msg of remote.messages) {
-                        if (!displayedMessageIds.has(msg.id)) {
-                            displayedMessageIds.add(msg.id);
-                            const isOwn = (msg.player === currentPlayer?.name);
-                            addLog(msg.content, true, msg.player, isOwn);
-                        }
-                    }
-                }
-                
-                document.getElementById("syncStatus").innerHTML = "🟢 实时同步中";
-                document.getElementById("syncStatus").className = "sync-online";
-                renderUI();
-                renderPlayers();
-                
-                if (currentPlayerId && players[currentPlayerId]) {
-                    currentPlayer = players[currentPlayerId];
-                    updateStatsPanel();
-                }
-            }
-        } catch(err) {
-            console.log("同步失败:", err);
-            document.getElementById("syncStatus").innerHTML = "🔴 同步断开";
-            document.getElementById("syncStatus").className = "sync-offline";
-        }
-    }
-    
-    function startAutoSync() {
-        if (syncInterval) clearInterval(syncInterval);
-        syncInterval = setInterval(syncFromServer, 1500);
-    }
-    
-    function renderUI() {
-        const sceneNameEl = document.getElementById("sceneName");
-        const sceneDescEl = document.getElementById("sceneDesc");
-        const enemyContainer = document.getElementById("enemyContainer");
-        if (sceneNameEl) sceneNameEl.innerHTML = gameWorld.sceneName;
-        if (sceneDescEl) sceneDescEl.innerHTML = gameWorld.sceneDesc;
-        if (!enemyContainer) return;
-        if (!gameWorld.enemies || gameWorld.enemies.length === 0) {
-            enemyContainer.innerHTML = "<div style='background:#28523b; border-radius: 20px; padding:12px;'>✅ 魔物已被击退！</div>";
-            return;
-        }
-        let html = "";
-        gameWorld.enemies.forEach(e => {
-            html += `<div class="enemy-card"><span>👾 ${e.name}</span><span>❤️ ${e.hp}/${e.maxHp}</span><progress value="${e.hp}" max="${e.maxHp}" style="width:80px;"></progress></div>`;
-        });
-        enemyContainer.innerHTML = html;
-    }
-    
-    function renderPlayers() {
-        const div = document.getElementById("playerListDiv");
-        if (!div) return;
-        let names = Object.values(players).map(p => {
-            const isCurrent = currentPlayerId === p.id;
-            return `<span class="badge ${isCurrent ? 'current' : ''}">${p.name}(${p.class}) ❤️${p.hp}</span>`;
-        });
-        if (names.length === 0) names = ["暂无旅伴"];
-        div.innerHTML = `👥 在线冒险团 (${Object.keys(players).length}人)： ${names.join(' ')}`;
-    }
-    
-    function updateStatsPanel() {
-        if (!currentPlayer) return;
-        const panel = document.getElementById("playerStatsPanel");
-        if (!panel) return;
-        panel.style.display = "block";
-        panel.innerHTML = `<div><strong>${currentPlayer.name}</strong> (${currentPlayer.class})</div>
-            <div>❤️ ${currentPlayer.hp}/${currentPlayer.maxHp}  |  💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp}</div>
-            <div>⚔️ 攻击 +${currentPlayer.atkBonus}  |  🗡️ ${currentPlayer.skillName}</div>`;
-    }
-    
-    async function callAI(character, actionDesc, dice, hitResult, damage, targetName) {
-        const prompt = `写一段30-50字的战斗描述，黑暗奇幻风格：${character.name}(${character.class}) 使用 ${actionDesc} 攻击 ${targetName}，掷出${dice}点，${hitResult}，造成${damage}点伤害。`;
         
+        // 同步到服务器
+        sendMessage("addMessage", { type, playerName: playerName || currentPlayer?.name, content });
+    }
+    
+    function systemMsg(msg) { addLog(msg, "system"); }
+    
+    async function sendMessage(action, data) {
         try {
-            const response = await fetch(WORKER_URL, {
+            const response = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${GROQ_API_KEY}`
-                },
-                body: JSON.stringify({
-                    messages: [
-                        { role: "system", content: "你是DND地下城主，擅长写简短的战斗描述。" },
-                        { role: "user", content: prompt }
-                    ]
-                })
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action, data })
             });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json();
-            
-            if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-                return data.choices[0].message.content.trim();
-            }
-            throw new Error("响应格式异常");
+            return await response.json();
         } catch(err) {
-            console.error("AI错误:", err);
-            if (hitResult.includes("命中")) {
-                return `⚔️ ${character.name} 的${actionDesc}狠狠击中${targetName}，造成${damage}点伤害！`;
-            } else {
-                return `🍃 ${character.name} 的${actionDesc}被${targetName}灵巧闪避。`;
-            }
+            console.error("发送失败:", err);
+            return { success: false, error: err.message };
         }
     }
     
+    // 创建角色
+    document.getElementById("createPlayerBtn").onclick = async () => {
+        const name = document.getElementById("playerName").value.trim();
+        const playerClass = document.getElementById("playerClass").value;
+        if (!name) { alert("请输入角色名"); return; }
+        
+        const result = await sendMessage("createPlayer", { name, class: playerClass });
+        if (result.success) {
+            currentPlayer = result.player;
+            localStorage.setItem("playerId", result.playerId);
+            document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
+            systemMsg(`角色创建成功！你的ID: ${result.playerId.substring(0, 8)}...`);
+            showPanel("room");
+            loadRoomState();
+        } else {
+            alert("创建失败: " + result.error);
+        }
+    };
+    
+    // 恢复角色
+    document.getElementById("restorePlayerBtn").onclick = async () => {
+        const playerId = document.getElementById("restoreId").value.trim();
+        if (!playerId) { alert("请输入角色ID"); return; }
+        
+        const result = await sendMessage("getPlayer", { playerId });
+        if (result.success && result.player) {
+            currentPlayer = result.player;
+            localStorage.setItem("playerId", playerId);
+            document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
+            systemMsg(`欢迎回来，${currentPlayer.name}！`);
+            showPanel("room");
+            loadRoomState();
+        } else {
+            alert("角色不存在或已过期，请重新创建");
+        }
+    };
+    
+    // 创建房间
+    async function createRoom() {
+        const result = await sendMessage("createRoom", { roomName: `${currentPlayer.name}的房间`, playerId: currentPlayer.id });
+        if (result.success) {
+            currentRoom = result.room;
+            await sendMessage("joinRoom", { roomId: currentRoom.id, playerId: currentPlayer.id });
+            systemMsg(`房间创建成功！房间码: ${currentRoom.id}`);
+            renderRoomUI();
+        } else {
+            alert("创建失败: " + result.error);
+        }
+    }
+    
+    // 加入房间
+    async function joinRoom() {
+        const roomCode = document.getElementById("joinRoomCode").value.trim().toUpperCase();
+        if (!roomCode) return;
+        const result = await sendMessage("joinRoom", { roomId: roomCode, playerId: currentPlayer.id });
+        if (result.success) {
+            currentRoom = result.room;
+            systemMsg(`加入房间成功！`);
+            renderRoomUI();
+        } else {
+            alert("加入失败: " + result.error);
+        }
+    }
+    
+    // 准备/取消准备
+    async function toggleReady() {
+        const newReady = !currentPlayer.isReady;
+        await sendMessage("playerReady", { playerId: currentPlayer.id, isReady: newReady });
+        currentPlayer.isReady = newReady;
+        renderRoomUI();
+    }
+    
+    // 开始游戏（房主）
+    async function startGame() {
+        const result = await sendMessage("startGame", { roomId: currentRoom.id, playerId: currentPlayer.id });
+        if (result.success) {
+            currentRoom = result.room;
+            // 生成AI场景
+            await generateAndSetScene();
+        } else {
+            alert("开始失败: " + result.error);
+        }
+    }
+    
+    // AI 生成场景
+    async function generateAndSetScene() {
+        systemMsg("🎲 AI 正在生成冒险场景...");
+        const playerClasses = currentRoom.players.map(pid => {
+            // 简化：需要从服务器获取玩家职业
+            return currentPlayer.class;
+        });
+        const result = await sendMessage("generateScene", { 
+            classes: [currentPlayer.class], 
+            playerCount: currentRoom.players.length 
+        });
+        
+        if (result.success && result.content) {
+            const parts = result.content.split("|");
+            const sceneDesc = parts[0];
+            const enemies = [];
+            for (let i = 1; i < parts.length; i++) {
+                const e = parts[i].split(",");
+                if (e.length >= 3) {
+                    enemies.push({ name: e[0].trim(), hp: parseInt(e[1]), maxHp: parseInt(e[1]), ac: parseInt(e[2]) });
+                }
+            }
+            if (enemies.length === 0) {
+                enemies.push({ name: "👹 哥布林", hp: 40, maxHp: 40, ac: 11 });
+            }
+            
+            await sendMessage("updateGame", { roomId: currentRoom.id, enemies, currentScene: sceneDesc });
+            currentRoom.enemies = enemies;
+            currentRoom.currentScene = sceneDesc;
+            addLog(sceneDesc, "ai");
+            addLog(`敌人出现: ${enemies.map(e => e.name).join(", ")}`, "action");
+        } else {
+            // 默认场景
+            const defaultEnemies = [{ name: "👹 哥布林", hp: 40, maxHp: 40, ac: 11 }];
+            await sendMessage("updateGame", { roomId: currentRoom.id, enemies: defaultEnemies, currentScene: "黑暗森林中，一只哥布林挡住了去路..." });
+            currentRoom.enemies = defaultEnemies;
+            addLog("黑暗森林中，一只哥布林挡住了去路...", "ai");
+        }
+        
+        // 设置第一个玩家回合
+        if (currentRoom.players.length > 0) {
+            await sendMessage("updateGame", { roomId: currentRoom.id, turn: currentRoom.players[0] });
+            currentRoom.turn = currentRoom.players[0];
+        }
+        gameActive = true;
+        renderGameUI();
+    }
+    
+    // 渲染房间界面
+    function renderRoomUI() {
+        if (!currentRoom) return;
+        
+        const isHost = currentRoom.hostId === currentPlayer.id;
+        const allReady = currentRoom.players.length >= 1; // 简化：至少1人可开始
+        
+        document.getElementById("roomInfo").innerHTML = `
+            <div class="room-code">🏠 房间码: ${currentRoom.id}</div>
+            <div>状态: ${currentRoom.status === "waiting" ? "等待中" : "游戏中"}</div>
+            <div>房主: ${isHost ? "你" : "其他玩家"}</div>
+        `;
+        
+        // 玩家列表需要从服务器获取完整数据，简化处理
+        document.getElementById("roomPlayerList").innerHTML = `
+            <div class="player-card ${currentPlayer.isReady ? 'ready' : ''}">
+                ${currentPlayer.name} (${currentPlayer.class}) ${currentPlayer.isReady ? '✓ 已准备' : '⭘ 未准备'}
+                ${isHost ? ' 👑' : ''}
+            </div>
+        `;
+        
+        if (currentRoom.status === "waiting") {
+            document.getElementById("roomActions").innerHTML = `
+                <button id="readyBtn" style="margin-bottom: 10px;">${currentPlayer.isReady ? '取消准备' : '准备就绪'}</button>
+                ${isHost ? `<button id="startGameBtn" ${!allReady ? 'disabled' : ''}>开始游戏</button>` : ''}
+                <div style="font-size: 12px; margin-top: 10px; color: #aaa;">等待房主开始游戏...</div>
+            `;
+            document.getElementById("readyBtn")?.addEventListener("click", toggleReady);
+            document.getElementById("startGameBtn")?.addEventListener("click", startGame);
+        } else if (currentRoom.status === "playing") {
+            document.getElementById("roomActions").innerHTML = `<div>游戏进行中...</div>`;
+            showPanel("game");
+            gameActive = true;
+            renderGameUI();
+        }
+    }
+    
+    // 渲染游戏界面
+    function renderGameUI() {
+        if (!currentRoom) return;
+        
+        const myId = currentPlayer.id;
+        myTurn = currentRoom.turn === myId;
+        
+        document.getElementById("turnIndicator").innerHTML = myTurn ? 
+            "🎲 轮到你了！请行动" : 
+            `⏳ 等待 ${currentRoom.turn === currentRoom.players[0] ? "其他玩家" : "AI"} 行动...`;
+        document.getElementById("sceneName").innerHTML = currentRoom.currentScene?.split("，")[0] || "冒险开始";
+        document.getElementById("sceneDesc").innerHTML = currentRoom.currentScene || "准备就绪...";
+        
+        // 敌人列表
+        const enemyContainer = document.getElementById("enemyContainer");
+        if (currentRoom.enemies && currentRoom.enemies.length > 0) {
+            let html = "";
+            currentRoom.enemies.forEach(e => {
+                html += `<div class="enemy-card"><span>👾 ${e.name}</span><span>❤️ ${e.hp}/${e.maxHp}</span></div>`;
+            });
+            enemyContainer.innerHTML = html;
+        } else {
+            enemyContainer.innerHTML = "<div>✅ 所有敌人已被击败！</div>";
+        }
+        
+        // 玩家状态
+        document.getElementById("playerStatsPanel").innerHTML = `
+            <div><strong>${currentPlayer.name}</strong> (${currentPlayer.class})</div>
+            <div>❤️ ${currentPlayer.hp}/${currentPlayer.maxHp}  |  💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp}</div>
+            <div>⚔️ 攻击 +${currentPlayer.atkBonus}</div>
+        `;
+        
+        document.getElementById("actionArea").style.display = myTurn && gameActive ? "flex" : "none";
+    }
+    
+    // 执行行动
     async function takeAction() {
-        if (isActionLocked) { systemMsg("请等待..."); return; }
-        if (!currentPlayer) { systemMsg("请先加入游戏"); return; }
-        if (currentPlayer.hp <= 0) { systemMsg("你已经倒下"); return; }
-        if (!gameWorld.enemies || gameWorld.enemies.length === 0) { systemMsg("没有敌人了"); return; }
+        if (!myTurn || !gameActive) { systemMsg("现在不是你的回合"); return; }
+        if (!currentRoom.enemies || currentRoom.enemies.length === 0) { systemMsg("没有敌人了！"); return; }
         
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) return;
         
-        isActionLocked = true;
         const btn = document.getElementById("actBtn");
-        btn.textContent = "⏳ AI中...";
         btn.disabled = true;
+        btn.textContent = "⏳ 行动中...";
         
         try {
-            const target = gameWorld.enemies[0];
-            const dice = d20();
+            const target = currentRoom.enemies[0];
+            const dice = Math.floor(Math.random() * 20) + 1;
             const attackRoll = dice + currentPlayer.atkBonus;
-            const targetAC = target.ac || 11;
-            const isHit = attackRoll >= targetAC;
-            
+            const isHit = attackRoll >= (target.ac || 11);
             let damage = 0;
+            
             if (isHit) {
-                damage = damageRoll(currentPlayer.baseDmg) + Math.floor(currentPlayer.atkBonus / 3);
-                damage = Math.max(2, damage);
+                damage = Math.floor(Math.random() * currentPlayer.baseDmg) + 5;
                 target.hp -= damage;
             }
             
-            gameWorld.enemies = gameWorld.enemies.filter(e => e.hp > 0);
+            // 更新敌人
+            currentRoom.enemies = currentRoom.enemies.filter(e => e.hp > 0);
+            await sendMessage("updateGame", { roomId: currentRoom.id, enemies: currentRoom.enemies });
             
-            if (isHit && damage > 0) {
-                currentPlayer.hp -= 5;
-                if (currentPlayer.hp < 0) currentPlayer.hp = 0;
-            }
+            addLog(`${currentPlayer.name} 掷出 ${dice}+${currentPlayer.atkBonus}=${attackRoll}，${isHit ? "命中" : "未命中"}，伤害 ${damage}`, "action", currentPlayer.name);
             
-            players[currentPlayer.id] = currentPlayer;
+            // 调用 AI 生成描述
+            const prompt = `写一段30字的战斗描述：${currentPlayer.name}(${currentPlayer.class}) 使用 ${actionText} 攻击 ${target.name}，${isHit ? "命中造成" + damage + "点伤害" : "未命中"}`;
+            try {
+                const aiRes = await fetch(WORKER_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+                    body: JSON.stringify({
+                        messages: [{ role: "user", content: prompt }],
+                        model: "llama-3.3-70b-versatile",
+                        max_tokens: 100
+                    })
+                });
+                const aiData = await aiRes.json();
+                if (aiData.choices) {
+                    addLog(aiData.choices[0].message.content, "ai", currentPlayer.name);
+                }
+            } catch(e) { console.log("AI失败"); }
             
-            const aiText = await callAI(currentPlayer, actionText, dice, isHit ? "命中" : "未命中", damage, target.name);
-            const fullMessage = `${aiText}`;
+            // 切换到下一个玩家
+            const currentIndex = currentRoom.players.indexOf(currentRoom.turn);
+            const nextIndex = (currentIndex + 1) % currentRoom.players.length;
+            await sendMessage("updateGame", { roomId: currentRoom.id, turn: currentRoom.players[nextIndex] });
+            currentRoom.turn = currentRoom.players[nextIndex];
             
-            // 添加到本地日志
-            addLog(`🎲 ${currentPlayer.name} 掷出${dice}+${currentPlayer.atkBonus}=${attackRoll} vs AC${targetAC} → ${isHit ? "命中" : "未命中"} 伤害${damage}`, false);
-            addLog(fullMessage, true, currentPlayer.name, true);
+            renderGameUI();
             
-            // 同步到服务器，让其他玩家看到
-            await addGlobalMessage(fullMessage, currentPlayer.name);
-            await syncToServer();
-            await syncPlayerToServer();
-            
-            renderUI();
-            updateStatsPanel();
-            renderPlayers();
-            
-            if (gameWorld.enemies.length === 0) {
-                const victoryMsg = "🏆 战斗胜利！所有玩家共享这份荣耀！";
-                addLog(victoryMsg, true);
-                await addGlobalMessage(victoryMsg, "系统");
-            }
-            
-            if (currentPlayer.hp <= 0) {
-                systemMsg(`💀 ${currentPlayer.name} 战死...`);
-                delete players[currentPlayer.id];
-                currentPlayer = null;
-                currentPlayerId = null;
-                document.getElementById("playerStatsPanel").style.display = "none";
-                await syncToServer();
-                renderPlayers();
+            if (currentRoom.enemies.length === 0) {
+                addLog("🏆 战斗胜利！", "ai");
+                gameActive = false;
             }
             
         } finally {
-            isActionLocked = false;
-            btn.textContent = "🎲 行动";
             btn.disabled = false;
+            btn.textContent = "🎲 行动";
             document.getElementById("actionInput").value = "";
         }
     }
     
-    async function joinGame() {
-        let name = document.getElementById("playerName").value.trim();
-        if (!name) name = "冒险者";
-        const job = document.getElementById("playerClass").value;
-        const newP = createPlayer(name, job);
-        currentPlayerId = newP.id;
-        currentPlayer = newP;
-        players[newP.id] = newP;
-        
-        await syncPlayerToServer();
-        await syncToServer();
-        
-        updateStatsPanel();
-        renderPlayers();
-        systemMsg(`${newP.name} 加入了冒险团！`);
-        await addGlobalMessage(`✨ ${newP.name} 从迷雾中走来，加入了冒险团！`, "系统");
-    }
-    
-    function toggleStats() {
-        const panel = document.getElementById("playerStatsPanel");
-        if (currentPlayer) panel.style.display = panel.style.display === "none" ? "block" : "none";
-    }
-    
-    async function testWorker() {
-        const statusDiv = document.getElementById("apiStatus");
-        statusDiv.innerHTML = "🔄 测试连接...";
+    // 同步状态
+    async function syncState() {
         try {
-            const response = await fetch(`${WORKER_URL}/state`, { method: "GET" });
+            const response = await fetch(`${WORKER_URL}/state`);
             if (response.ok) {
-                statusDiv.innerHTML = "✅ 多人模式已启用，实时同步中";
-                statusDiv.className = "status-ok";
-            } else {
-                statusDiv.innerHTML = "⚠️ Worker连接异常";
-                statusDiv.className = "status-warning";
+                const data = await response.json();
+                if (data.rooms && currentRoom?.id) {
+                    const updatedRoom = data.rooms[currentRoom.id];
+                    if (updatedRoom) {
+                        const oldTurn = currentRoom?.turn;
+                        currentRoom = updatedRoom;
+                        if (currentRoom.status === "playing" && gameActive) {
+                            if (oldTurn !== currentRoom.turn) {
+                                renderGameUI();
+                            }
+                        }
+                        if (currentRoom.status === "playing" && !gameActive) {
+                            gameActive = true;
+                            renderGameUI();
+                        }
+                    }
+                }
+                if (data.messages) {
+                    for (const msg of data.messages.slice(-10)) {
+                        if (!displayedMessageIds.has(msg.id)) {
+                            displayedMessageIds.add(msg.id);
+                            addLog(msg.content, msg.type, msg.playerName);
+                        }
+                    }
+                }
             }
+            document.getElementById("syncStatus").innerHTML = "🟢 已连接";
         } catch(err) {
-            statusDiv.innerHTML = "⚠️ 连接中...";
-            statusDiv.className = "status-warning";
+            document.getElementById("syncStatus").innerHTML = "🔴 离线";
         }
     }
     
-    document.getElementById("joinBtn").onclick = joinGame;
-    document.getElementById("statsBtn").onclick = toggleStats;
+    async function loadRoomState() {
+        const response = await fetch(`${WORKER_URL}/state`);
+        if (response.ok) {
+            const data = await response.json();
+            for (const roomId in data.rooms) {
+                if (data.rooms[roomId].players.includes(currentPlayer.id)) {
+                    currentRoom = data.rooms[roomId];
+                    break;
+                }
+            }
+        }
+        if (currentRoom) {
+            if (currentRoom.status === "playing") {
+                gameActive = true;
+                showPanel("game");
+                renderGameUI();
+            } else {
+                renderRoomUI();
+            }
+        } else {
+            // 显示创建房间按钮
+            document.getElementById("roomActions").innerHTML = `<button id="createRoomBtn">➕ 创建新房间</button>`;
+            document.getElementById("createRoomBtn")?.addEventListener("click", createRoom);
+            document.getElementById("roomPlayerList").innerHTML = "<div>暂无房间，点击上方按钮创建</div>";
+        }
+    }
+    
+    // 事件绑定
+    document.getElementById("joinRoomBtn").onclick = joinRoom;
     document.getElementById("actBtn").onclick = takeAction;
     document.getElementById("actionInput").addEventListener("keypress", (e) => { if(e.key === "Enter") takeAction(); });
     
-    startAutoSync();
-    testWorker();
-    addLog("🔥 多人实时模式已启动！所有人的战斗记录都会显示在这里！", true);
+    // 自动同步
+    syncInterval = setInterval(syncState, 2000);
+    
+    // 检查是否有保存的角色
+    const savedId = localStorage.getItem("playerId");
+    if (savedId) {
+        document.getElementById("restoreId").value = savedId;
+    }
+    
+    systemMsg("欢迎来到 AI 跑团！创建或恢复角色开始冒险。");
 </script>
 </body>
 </html>
