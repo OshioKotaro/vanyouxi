@@ -186,7 +186,71 @@
 <script>
     // ========== ⚙️ 配置 ==========
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    const OPENAI_API_KEY = "";  // ← 改成你的Key！！！
+    const OPENAI_API_KEY = ""export default {
+  async fetch(request) {
+    // CORS预检
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      });
+    }
+
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    try {
+      const requestBody = await request.json();
+      const authHeader = request.headers.get("Authorization");
+
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Missing API Key" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
+      }
+
+      // 调用免费的Groq API（不是OpenAI）
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": authHeader,
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",  // Groq免费模型，速度极快
+          messages: requestBody.messages,
+          temperature: 0.8,
+          max_tokens: 150,
+        }),
+      });
+
+      const data = await response.json();
+
+      return new Response(JSON.stringify(data), {
+        status: response.status,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+
+    } catch (error) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+  }
+};";  // ← 改成你的Key！！！
     // ==============================
     
     let gameWorld = {
