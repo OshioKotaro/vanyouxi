@@ -186,71 +186,8 @@
 <script>
     // ========== ⚙️ 配置 ==========
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    const OPENAI_API_KEY = ""export default {
-  async fetch(request) {
-    // CORS预检
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      });
-    }
-
-    if (request.method !== "POST") {
-      return new Response("Method not allowed", { status: 405 });
-    }
-
-    try {
-      const requestBody = await request.json();
-      const authHeader = request.headers.get("Authorization");
-
-      if (!authHeader) {
-        return new Response(JSON.stringify({ error: "Missing API Key" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-        });
-      }
-
-      // 调用免费的Groq API（不是OpenAI）
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": authHeader,
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",  // Groq免费模型，速度极快
-          messages: requestBody.messages,
-          temperature: 0.8,
-          max_tokens: 150,
-        }),
-      });
-
-      const data = await response.json();
-
-      return new Response(JSON.stringify(data), {
-        status: response.status,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
-
-    } catch (error) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
-    }
-  }
-};";  // ← 改成你的Key！！！
+    // 在这里填你的Groq API Key（以 gsk_ 开头）
+    const OPENAI_API_KEY = "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";
     // ==============================
     
     let gameWorld = {
@@ -376,7 +313,7 @@
                     "Authorization": `Bearer ${OPENAI_API_KEY}`
                 },
                 body: JSON.stringify({
-                    model: "gpt-4o-mini",
+                    model: "llama-3.3-70b-versatile",
                     messages: [
                         { role: "system", content: "你是DND地下城主，擅长写简短的战斗描述。" },
                         { role: "user", content: prompt }
@@ -392,7 +329,6 @@
             
             const data = await response.json();
             
-            // 解析标准OpenAI响应
             if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
                 return data.choices[0].message.content.trim();
             }
