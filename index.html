@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 修复版</title>
+    <title>🐉 AI跑团 · 最终修复版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -147,7 +147,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 修复版</h1>
+    <h1>🐉 AI跑团 · 最终修复版</h1>
     <div id="apiStatus" style="text-align: right; font-size: 11px; margin-bottom: 8px;">🔍 检测中...</div>
     
     <div class="join-bar">
@@ -186,7 +186,7 @@
 <script>
     // ========== ⚙️ 配置 ==========
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    const OPENAI_API_KEY = "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";  // ← 改成你的Key
+    const OPENAI_API_KEY = "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";  // ← 改成你的Key！！！
     // ==============================
     
     let gameWorld = {
@@ -301,11 +301,8 @@
             <div>⚔️ 攻击 +${currentPlayer.atkBonus}  |  🗡️ ${currentPlayer.skillName}</div>`;
     }
     
-    // 🧠 修复后的AI调用 - 增加详细的错误日志
     async function callAI(character, actionDesc, dice, hitResult, damage, targetName) {
         const prompt = `写一段30-50字的战斗描述，黑暗奇幻风格：${character.name}(${character.class}) 使用 ${actionDesc} 攻击 ${targetName}，掷出${dice}点，${hitResult}，造成${damage}点伤害。`;
-        
-        console.log("🤖 发送请求到Worker:", WORKER_URL);
         
         try {
             const response = await fetch(WORKER_URL, {
@@ -325,72 +322,41 @@
                 })
             });
             
-            console.log("响应状态:", response.status);
-            
             if (!response.ok) {
-                const errorText = await response.text();
-                console.error("HTTP错误:", errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
+                throw new Error(`HTTP ${response.status}`);
             }
             
             const data = await response.json();
-            console.log("完整响应数据:", data);
             
-            // 尝试多种可能的数据格式
-            let aiText = null;
-            
-            // 格式1: data.choices[0].message.content (标准OpenAI格式)
+            // 解析标准OpenAI响应
             if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-                aiText = data.choices[0].message.content;
-                console.log("格式1成功");
-            }
-            // 格式2: data.content (简化格式)
-            else if (data.content) {
-                aiText = data.content;
-                console.log("格式2成功");
-            }
-            // 格式3: data.response (另一种简化格式)
-            else if (data.response) {
-                aiText = data.response;
-                console.log("格式3成功");
-            }
-            // 格式4: data (直接是字符串)
-            else if (typeof data === "string") {
-                aiText = data;
-                console.log("格式4成功");
+                return data.choices[0].message.content.trim();
             }
             
-            if (aiText) {
-                return aiText.trim();
-            } else {
-                console.error("无法解析AI响应:", data);
-                throw new Error("响应格式无法解析");
-            }
+            throw new Error("响应格式异常");
             
         } catch(err) {
-            console.error("AI调用失败:", err);
-            // 返回生动的降级描述
+            console.error("AI错误:", err);
             if (hitResult.includes("命中")) {
-                return `⚔️ ${character.name} 的${actionDesc}划破空气，狠狠斩在${targetName}身上，造成${damage}点重创！血光四溅。`;
+                return `⚔️ ${character.name} 的${actionDesc}狠狠击中${targetName}，造成${damage}点伤害！`;
             } else {
-                return `🍃 ${character.name} 的${actionDesc}被${targetName}灵巧地侧身闪避，只砍中了一片残影。`;
+                return `🍃 ${character.name} 的${actionDesc}被${targetName}灵巧闪避。`;
             }
         }
     }
     
     async function takeAction() {
-        if (isActionLocked) { systemMsg("请等待上一个行动完成..."); return; }
-        if (!currentPlayer) { systemMsg("请先点击「加入」创建角色！"); return; }
-        if (currentPlayer.hp <= 0) { systemMsg("你已经倒下，请重新加入。"); return; }
-        if (!gameWorld.enemies.length) { systemMsg("没有敌人了！"); return; }
+        if (isActionLocked) { systemMsg("请等待..."); return; }
+        if (!currentPlayer) { systemMsg("请先加入游戏"); return; }
+        if (currentPlayer.hp <= 0) { systemMsg("你已经倒下"); return; }
+        if (!gameWorld.enemies.length) { systemMsg("没有敌人了"); return; }
         
         const actionText = document.getElementById("actionInput").value;
-        if (!actionText) { systemMsg("请输入行动描述！"); return; }
+        if (!actionText) return;
         
         isActionLocked = true;
         const btn = document.getElementById("actBtn");
-        const originalBtnText = btn.textContent;
-        btn.textContent = "⏳ AI思考中...";
+        btn.textContent = "⏳ AI中...";
         btn.disabled = true;
         
         try {
@@ -401,43 +367,31 @@
             const isHit = attackRoll >= targetAC;
             
             let damage = 0;
-            let hitText = "";
-            
             if (isHit) {
                 damage = damageRoll(currentPlayer.baseDmg) + Math.floor(currentPlayer.atkBonus / 3);
                 damage = Math.max(2, damage);
                 target.hp -= damage;
-                hitText = "命中";
-            } else {
-                hitText = "未命中";
-                damage = 0;
             }
             
-            // 更新数据
             players[currentPlayer.id] = currentPlayer;
             gameWorld.enemies = gameWorld.enemies.filter(e => e.hp > 0);
             
-            // 添加战斗日志
-            addLog(`🎲 掷出 ${dice} + ${currentPlayer.atkBonus} = ${attackRoll} vs AC${targetAC} → ${isHit ? "命中" : "未命中"}，伤害 ${damage}`, false);
+            addLog(`🎲 掷出${dice}+${currentPlayer.atkBonus}=${attackRoll} vs AC${targetAC} → ${isHit ? "命中" : "未命中"} 伤害${damage}`, false);
             
-            // 调用AI
-            const aiDescription = await callAI(currentPlayer, actionText, dice, hitText, damage, target.name);
-            addLog(aiDescription, true);
+            const aiText = await callAI(currentPlayer, actionText, dice, isHit ? "命中" : "未命中", damage, target.name);
+            addLog(aiText, true);
             
-            // 刷新界面
             renderUI();
             updateStatsPanel();
             renderPlayers();
             saveWorld();
             
-            // 检查胜利
             if (gameWorld.enemies.length === 0) {
-                addLog("🏆 战斗胜利！冒险者们获得了丰厚的战利品。", true);
+                addLog("🏆 战斗胜利！", true);
             }
             
-            // 检查玩家死亡
             if (currentPlayer.hp <= 0) {
-                systemMsg(`💀 ${currentPlayer.name} 力竭而亡...`);
+                systemMsg(`💀 ${currentPlayer.name} 战死...`);
                 delete players[currentPlayer.id];
                 currentPlayer = null;
                 currentPlayerId = null;
@@ -446,12 +400,9 @@
                 saveWorld();
             }
             
-        } catch(err) {
-            console.error("行动执行错误:", err);
-            systemMsg(`错误: ${err.message}`);
         } finally {
             isActionLocked = false;
-            btn.textContent = originalBtnText;
+            btn.textContent = "🎲 行动";
             btn.disabled = false;
             document.getElementById("actionInput").value = "";
         }
@@ -461,60 +412,48 @@
         let name = document.getElementById("playerName").value.trim();
         if (!name) name = "冒险者";
         const job = document.getElementById("playerClass").value;
-        const newPlayer = createPlayer(name, job);
-        players[newPlayer.id] = newPlayer;
-        currentPlayerId = newPlayer.id;
-        currentPlayer = newPlayer;
+        const newP = createPlayer(name, job);
+        players[newP.id] = newP;
+        currentPlayerId = newP.id;
+        currentPlayer = newP;
         updateStatsPanel();
         renderPlayers();
         saveWorld();
-        systemMsg(`${newPlayer.name} (${newPlayer.class}) 加入了冒险团！`);
-        addLog(`✨ ${newPlayer.name} 从迷雾中走来，握紧了武器。`, true);
+        systemMsg(`${newP.name} 加入冒险！`);
+        addLog(`✨ ${newP.name} 踏入了这片危险的土地。`, true);
     }
     
     function toggleStats() {
         const panel = document.getElementById("playerStatsPanel");
-        if (currentPlayer) {
-            panel.style.display = panel.style.display === "none" ? "block" : "none";
-        } else {
-            systemMsg("请先加入游戏");
-        }
+        if (currentPlayer) panel.style.display = panel.style.display === "none" ? "block" : "none";
     }
     
-    // 测试Worker连接
     async function testWorker() {
         const statusDiv = document.getElementById("apiStatus");
-        statusDiv.innerHTML = "🔄 测试Worker连接...";
-        
+        statusDiv.innerHTML = "🔄 测试Worker...";
         try {
-            const response = await fetch(WORKER_URL, { method: "HEAD" });
-            if (response.ok || response.status === 405 || response.status === 204) {
-                statusDiv.innerHTML = "✅ Worker已连接，AI模式就绪";
+            const response = await fetch(WORKER_URL, { method: "OPTIONS" });
+            if (response.status === 204 || response.status === 200) {
+                statusDiv.innerHTML = "✅ Worker已连接，AI就绪";
                 statusDiv.className = "status-ok";
             } else {
-                statusDiv.innerHTML = `⚠️ Worker响应: ${response.status}`;
-                statusDiv.className = "status-warning";
+                statusDiv.innerHTML = "✅ Worker在线";
+                statusDiv.className = "status-ok";
             }
         } catch(err) {
-            statusDiv.innerHTML = `⚠️ 请确保Worker地址正确`;
+            statusDiv.innerHTML = "⚠️ Worker连接失败";
             statusDiv.className = "status-warning";
-            console.error("Worker测试失败:", err);
         }
     }
     
-    // 绑定事件
     document.getElementById("joinBtn").onclick = joinGame;
     document.getElementById("statsBtn").onclick = toggleStats;
     document.getElementById("actBtn").onclick = takeAction;
-    document.getElementById("actionInput").addEventListener("keypress", (e) => {
-        if (e.key === "Enter") takeAction();
-    });
+    document.getElementById("actionInput").addEventListener("keypress", (e) => { if(e.key === "Enter") takeAction(); });
     
-    // 初始化
     loadWorld();
     testWorker();
-    addLog("🔥 AI跑团已启动！每次行动都会调用GPT生成描述。", true);
-    addLog("💡 打开F12控制台可以看到详细的调用日志。", false);
+    addLog("🔥 AI跑团已启动！", true);
 </script>
 </body>
 </html>
