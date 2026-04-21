@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 优化版</title>
+    <title>🐉 AI跑团 · 最终修复版（同步行动日志）</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -144,7 +144,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 优化版</h1>
+    <h1>🐉 AI跑团 · 同步行动版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -220,7 +220,6 @@
         document.getElementById(name + "Panel").classList.remove("hidden");
     }
     
-    // 清空日志并重置去重状态
     function clearLog() {
         const logDiv = document.getElementById("combatLog");
         if (logDiv) logDiv.innerHTML = "";
@@ -283,10 +282,8 @@
         }
     }
     
-    // 重置房间相关状态（清空日志，更新 lastMessageId）
     async function resetRoomState() {
         clearLog();
-        // 获取当前服务器最新消息ID，避免旧消息重新显示
         try {
             const res = await fetch(`${WORKER_URL}/state`);
             const data = await res.json();
@@ -363,7 +360,7 @@
         const res = await api("createRoom", { roomName: `${currentPlayer.name}的房间`, playerId: currentPlayer.id });
         if (res.success) {
             currentRoom = res.room;
-            await resetRoomState();      // 清空历史日志
+            await resetRoomState();
             await refreshState();
         } else {
             alert("创建失败: " + (res.error || "未知错误"));
@@ -376,7 +373,7 @@
         const res = await api("joinRoom", { roomId: code, playerId: currentPlayer.id });
         if (res.success) {
             currentRoom = res.room;
-            await resetRoomState();      // 清空历史日志
+            await resetRoomState();
             await refreshState();
         } else {
             alert("加入失败: " + res.error);
@@ -460,7 +457,6 @@
             💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp}
         `;
         
-        // 控制行动按钮和输入框的启用/禁用（不隐藏区域）
         const actionInput = document.getElementById("actionInput");
         const actBtn = document.getElementById("actBtn");
         if (actionInput) actionInput.disabled = !canAct;
@@ -487,7 +483,6 @@
         }
         
         isActing = true;
-        // 立即禁用按钮，防止重复点击
         document.getElementById("actBtn").disabled = true;
         document.getElementById("actionInput").disabled = true;
         
@@ -514,21 +509,21 @@
                 turn: nextTurn
             });
             
-            addLog(`${currentPlayer.name} 掷出 ${dice}，${isHit ? "命中 " + damage + " 伤害" : "未命中"}`, "action", true);
+            // 关键修复：skipSync 改为 false，让日志同步给其他玩家
+            addLog(`${currentPlayer.name} 掷出 ${dice}，${isHit ? "命中 " + damage + " 伤害" : "未命中"}`, "action", false);
             
             const hitResult = isHit ? "命中" : "未命中";
             const aiDesc = await generateBattleDescription(
                 currentPlayer.name, currentPlayer.class, actionText, hitResult, damage
             );
-            addLog(aiDesc, "ai", true);
+            addLog(aiDesc, "ai", false);
             
             await refreshState();
             renderGameUI();
             
             if (newEnemies.length === 0) {
-                addLog("🏆 战斗胜利！", "ai", true);
+                addLog("🏆 战斗胜利！", "ai", false);
                 gameActive = false;
-                // 胜利后禁用所有行动控件
                 document.getElementById("actionInput").disabled = true;
                 document.getElementById("actBtn").disabled = true;
             }
@@ -538,7 +533,6 @@
             addLog("行动失败: " + e.message, "system", true);
         } finally {
             isActing = false;
-            // 重新渲染UI会更新按钮状态，但需要确保当前玩家是否还是自己（回合可能已变）
             renderGameUI();
         }
     }
@@ -570,7 +564,6 @@
                     }
                 }
             }
-            // 处理新消息（去重）
             if (data.messages && data.messages.length) {
                 for (let msg of data.messages) {
                     if (msg.id > lastMessageId) {
@@ -600,7 +593,7 @@
         }
     });
     
-    syncInterval = setInterval(syncLoop, 1000);  // 缩短到1秒，提高响应速度
+    syncInterval = setInterval(syncLoop, 1000);
     showPanel("login");
     addLog("🎲 欢迎来到 AI 跑团！", "system", true);
     if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
