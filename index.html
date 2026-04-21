@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 稳定版（去重修复）</title>
+    <title>🐉 AI跑团 · 优化版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -58,9 +58,10 @@
             cursor: pointer;
             font-size: 14px;
             width: 100%;
+            transition: opacity 0.2s;
         }
         button:hover { background: #a47e42; }
-        button:disabled { opacity: 0.5; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         .room-code {
             font-size: 20px;
             font-weight: bold;
@@ -122,7 +123,9 @@
             padding: 10px;
             border-radius: 40px;
             color: #f7efcf;
+            transition: opacity 0.2s;
         }
+        #actionInput:disabled { opacity: 0.5; }
         #actBtn { flex: 1; background: #9e6f3e; }
         .turn-indicator {
             background: #7e6236;
@@ -141,7 +144,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 稳定版</h1>
+    <h1>🐉 AI跑团 · 优化版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -208,7 +211,6 @@
     let gameActive = false;
     let lastMessageId = 0;
     let isActing = false;
-    // 记录已显示的消息ID，防止重复
     let displayedMessageIds = new Set();
     
     function showPanel(name) {
@@ -218,17 +220,20 @@
         document.getElementById(name + "Panel").classList.remove("hidden");
     }
     
+    // 清空日志并重置去重状态
+    function clearLog() {
+        const logDiv = document.getElementById("combatLog");
+        if (logDiv) logDiv.innerHTML = "";
+        displayedMessageIds.clear();
+        lastMessageId = 0;
+    }
+    
     function addLog(content, type = "system", skipSync = false, messageId = null) {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return;
         
-        // 如果提供了 messageId 且已经显示过，跳过
-        if (messageId && displayedMessageIds.has(messageId)) {
-            return;
-        }
-        if (messageId) {
-            displayedMessageIds.add(messageId);
-        }
+        if (messageId && displayedMessageIds.has(messageId)) return;
+        if (messageId) displayedMessageIds.add(messageId);
         
         const p = document.createElement("p");
         const cls = type === "ai" ? "ai-text" : (type === "action" ? "action-text" : "system-text");
@@ -236,10 +241,7 @@
         logDiv.appendChild(p);
         p.scrollIntoView({ behavior: "smooth", block: "nearest" });
         
-        // 限制日志条目数量，避免内存过大
-        while (logDiv.children.length > 200) {
-            logDiv.removeChild(logDiv.firstChild);
-        }
+        while (logDiv.children.length > 200) logDiv.removeChild(logDiv.firstChild);
         
         if (!skipSync && currentPlayer) {
             api("addMessage", { type, playerName: currentPlayer.name, content });
@@ -274,14 +276,25 @@
                 })
             });
             const result = await res.json();
-            if (result.success && result.description) {
-                return result.description;
-            }
+            if (result.success && result.description) return result.description;
             return `${playerName} ${hitResult === "命中" ? `的${actionDesc}造成了${damage}点伤害` : "的攻击被闪避了"}！`;
         } catch(e) {
-            console.error("AI生成失败:", e);
             return `${playerName} ${hitResult === "命中" ? `的${actionDesc}造成了${damage}点伤害` : "的攻击被闪避了"}！`;
         }
+    }
+    
+    // 重置房间相关状态（清空日志，更新 lastMessageId）
+    async function resetRoomState() {
+        clearLog();
+        // 获取当前服务器最新消息ID，避免旧消息重新显示
+        try {
+            const res = await fetch(`${WORKER_URL}/state`);
+            const data = await res.json();
+            if (data.messages && data.messages.length) {
+                const maxId = Math.max(...data.messages.map(m => m.id), 0);
+                lastMessageId = maxId;
+            }
+        } catch(e) { console.warn("获取消息ID失败", e); }
     }
     
     document.getElementById("createPlayerBtn").onclick = async () => {
@@ -350,6 +363,7 @@
         const res = await api("createRoom", { roomName: `${currentPlayer.name}的房间`, playerId: currentPlayer.id });
         if (res.success) {
             currentRoom = res.room;
+            await resetRoomState();      // 清空历史日志
             await refreshState();
         } else {
             alert("创建失败: " + (res.error || "未知错误"));
@@ -362,6 +376,7 @@
         const res = await api("joinRoom", { roomId: code, playerId: currentPlayer.id });
         if (res.success) {
             currentRoom = res.room;
+            await resetRoomState();      // 清空历史日志
             await refreshState();
         } else {
             alert("加入失败: " + res.error);
@@ -425,6 +440,8 @@
     function renderGameUI() {
         if (!currentRoom) return;
         const myTurn = currentRoom.turn === currentPlayer.id;
+        const canAct = myTurn && currentRoom.enemies?.length > 0 && gameActive && !isActing;
+        
         document.getElementById("turnIndicator").innerHTML = myTurn ? "🎲 轮到你了！" : "⏳ 等待其他玩家...";
         document.getElementById("sceneDesc").innerHTML = currentRoom.currentScene || "冒险继续...";
         
@@ -443,11 +460,11 @@
             💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp}
         `;
         
-        const canAct = myTurn && currentRoom.enemies?.length > 0 && gameActive && !isActing;
-        const actionArea = document.getElementById("actionArea");
-        if (actionArea) {
-            actionArea.style.display = canAct ? "flex" : "none";
-        }
+        // 控制行动按钮和输入框的启用/禁用（不隐藏区域）
+        const actionInput = document.getElementById("actionInput");
+        const actBtn = document.getElementById("actBtn");
+        if (actionInput) actionInput.disabled = !canAct;
+        if (actBtn) actBtn.disabled = !canAct;
     }
     
     async function takeAction() {
@@ -470,10 +487,9 @@
         }
         
         isActing = true;
-        const btn = document.getElementById("actBtn");
-        const originalBtnText = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = "🎲 AI 思考中...";
+        // 立即禁用按钮，防止重复点击
+        document.getElementById("actBtn").disabled = true;
+        document.getElementById("actionInput").disabled = true;
         
         try {
             const target = currentRoom.enemies[0];
@@ -512,16 +528,17 @@
             if (newEnemies.length === 0) {
                 addLog("🏆 战斗胜利！", "ai", true);
                 gameActive = false;
+                // 胜利后禁用所有行动控件
+                document.getElementById("actionInput").disabled = true;
+                document.getElementById("actBtn").disabled = true;
             }
             
             document.getElementById("actionInput").value = "";
-            
         } catch(e) {
             addLog("行动失败: " + e.message, "system", true);
         } finally {
             isActing = false;
-            btn.disabled = false;
-            btn.textContent = originalBtnText;
+            // 重新渲染UI会更新按钮状态，但需要确保当前玩家是否还是自己（回合可能已变）
             renderGameUI();
         }
     }
@@ -553,17 +570,15 @@
                     }
                 }
             }
-            // 处理新消息 - 使用 messageId 去重
+            // 处理新消息（去重）
             if (data.messages && data.messages.length) {
                 for (let msg of data.messages) {
-                    // 使用消息的 id 作为唯一标识，避免重复显示
                     if (msg.id > lastMessageId) {
                         lastMessageId = msg.id;
-                        // 只显示其他玩家或系统消息，不重复显示自己的消息
+                        // 只显示其他玩家或系统消息，自己的消息已经显示过
                         if (msg.playerName !== currentPlayer?.name) {
                             addLog(msg.content, msg.type, true, msg.id);
                         } else {
-                            // 自己的消息也已经显示过了，只记录 id 但不重复显示
                             displayedMessageIds.add(msg.id);
                         }
                     }
@@ -585,7 +600,7 @@
         }
     });
     
-    syncInterval = setInterval(syncLoop, 1500);
+    syncInterval = setInterval(syncLoop, 1000);  // 缩短到1秒，提高响应速度
     showPanel("login");
     addLog("🎲 欢迎来到 AI 跑团！", "system", true);
     if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
