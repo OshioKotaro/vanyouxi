@@ -3,36 +3,140 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 完整剧情版</title>
+    <title>🐉 AI跑团 · 完整剧情版（修复长文本显示）</title>
     <style>
-        /* 基本样式与之前相同，为了节约篇幅，此处省略重复样式，实际使用时保留原样式即可 */
         * { box-sizing: border-box; }
-        body { background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%); font-family: -apple-system, monospace; color: #e8e2d4; padding: 12px; margin: 0; }
-        .container { max-width: 700px; margin: 0 auto; background: rgba(0,0,0,0.6); border-radius: 24px; padding: 16px; border: 1px solid #c4a46e; }
+        body {
+            background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%);
+            font-family: -apple-system, monospace;
+            color: #e8e2d4;
+            padding: 12px;
+            margin: 0;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: rgba(0,0,0,0.6);
+            border-radius: 24px;
+            padding: 16px;
+            border: 1px solid #c4a46e;
+        }
         h1 { font-size: 1.3rem; margin: 0 0 12px 0; text-align: center; }
-        .status-bar { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 12px; padding: 5px 10px; background: #1a2a24; border-radius: 20px; }
-        .panel { background: #0e1815cc; border-radius: 20px; padding: 15px; margin-bottom: 15px; }
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            margin-bottom: 12px;
+            padding: 5px 10px;
+            background: #1a2a24;
+            border-radius: 20px;
+        }
+        .panel {
+            background: #0e1815cc;
+            border-radius: 20px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
         .form-group { margin-bottom: 12px; }
         label { display: block; font-size: 12px; margin-bottom: 4px; color: #dbb86b; }
-        input, select { width: 100%; background: #2c3b32; border: 1px solid #b48c48; padding: 10px; border-radius: 40px; color: #f2e5c6; font-size: 14px; }
-        button { background: #7e6236; border: none; padding: 10px; border-radius: 40px; font-weight: bold; color: #fff0d4; cursor: pointer; font-size: 14px; width: 100%; transition: opacity 0.2s; }
+        input, select {
+            width: 100%;
+            background: #2c3b32;
+            border: 1px solid #b48c48;
+            padding: 10px;
+            border-radius: 40px;
+            color: #f2e5c6;
+            font-size: 14px;
+        }
+        button {
+            background: #7e6236;
+            border: none;
+            padding: 10px;
+            border-radius: 40px;
+            font-weight: bold;
+            color: #fff0d4;
+            cursor: pointer;
+            font-size: 14px;
+            width: 100%;
+            transition: opacity 0.2s;
+        }
         button:hover { background: #a47e42; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .room-code { font-size: 20px; font-weight: bold; text-align: center; background: #1a2a24; padding: 10px; border-radius: 16px; margin: 10px 0; letter-spacing: 2px; }
-        .player-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; min-height: 60px; }
-        .player-card { background: #2a3b2c; padding: 6px 12px; border-radius: 40px; font-size: 12px; }
+        .room-code {
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            background: #1a2a24;
+            padding: 10px;
+            border-radius: 16px;
+            margin: 10px 0;
+            letter-spacing: 2px;
+        }
+        .player-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 12px 0;
+            min-height: 60px;
+        }
+        .player-card {
+            background: #2a3b2c;
+            padding: 6px 12px;
+            border-radius: 40px;
+            font-size: 12px;
+        }
         .player-card.ready { background: #4a6b3c; border: 1px solid #8bc34a; }
         .player-card.host { border: 1px solid gold; }
-        .enemy-card { background: #2a221ab3; margin: 8px 0; padding: 8px 12px; border-radius: 40px; display: flex; justify-content: space-between; }
-        .combat-log { background: #030807; height: 250px; overflow-y: auto; padding: 10px; border-radius: 16px; font-size: 12px; }
-        .combat-log p { margin: 5px 0; border-left: 2px solid #dba450; padding-left: 8px; }
+        .enemy-card {
+            background: #2a221ab3;
+            margin: 8px 0;
+            padding: 8px 12px;
+            border-radius: 40px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .combat-log {
+            background: #030807;
+            height: 250px;
+            overflow-y: auto;
+            padding: 10px;
+            border-radius: 16px;
+            font-size: 12px;
+            /* 修复长文本显示不全的问题 */
+            word-wrap: break-word;
+            white-space: normal;
+            word-break: break-word;
+        }
+        .combat-log p {
+            margin: 5px 0;
+            border-left: 2px solid #dba450;
+            padding-left: 8px;
+        }
         .ai-text { color: #f7e6b0; font-style: italic; }
         .action-text { color: #ffaa66; }
         .system-text { color: #aaa; font-size: 11px; }
-        .action-area { display: flex; gap: 8px; margin-top: 10px; }
-        #actionInput { flex: 3; background: #1c2b25; border: 1px solid #c4a060; padding: 10px; border-radius: 40px; color: #f7efcf; }
+        .action-area {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        #actionInput {
+            flex: 3;
+            background: #1c2b25;
+            border: 1px solid #c4a060;
+            padding: 10px;
+            border-radius: 40px;
+            color: #f7efcf;
+        }
         #actBtn { flex: 1; background: #9e6f3e; }
-        .turn-indicator { background: #7e6236; padding: 8px; border-radius: 40px; text-align: center; font-size: 12px; margin-bottom: 10px; }
+        .turn-indicator {
+            background: #7e6236;
+            padding: 8px;
+            border-radius: 40px;
+            text-align: center;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
         .hidden { display: none; }
         hr { border-color: #5e6e45; margin: 12px 0; }
         .flex-row { display: flex; gap: 8px; }
@@ -442,16 +546,14 @@
                 addLog(aiDesc, "ai", false);
                 if (newEnemies.length === 0) {
                     addLog("🏆 战斗胜利！", "ai", false);
-                    // 战斗结束后生成剧情
                     const afterBattle = await generateNarrative("战斗结束后，描述场景的变化或新的发现。");
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                // 非战斗：探索/对话/其他，调用 AI 生成剧情
+                // 非战斗：探索/对话/其他
                 const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。请生成一段简短的描述和可能的结果，并建议是否触发战斗或获得物品。`;
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
-                // 简单处理：如果 AI 描述中提到敌人，可以添加敌人（可选，暂不实现复杂逻辑）
                 // 回合切换
                 const playerList = currentRoom.players;
                 const currentIdx = playerList.indexOf(currentPlayer.id);
