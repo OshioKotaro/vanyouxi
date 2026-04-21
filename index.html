@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 稳定版</title>
+    <title>🐉 AI跑团 · AI主持版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -137,11 +137,12 @@
         .flex-row { display: flex; gap: 8px; }
         .flex-row button { width: auto; }
         .info-text { font-size: 12px; color: #aaa; margin-top: 5px; text-align: center; }
+        .loading { opacity: 0.6; pointer-events: none; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 稳定版</h1>
+    <h1>🐉 AI跑团 · AI主持版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -203,12 +204,14 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
+    const GROQ_API_KEY = "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";  // ← 填入你的 Groq API Key
     
     let currentPlayer = null;
     let currentRoom = null;
     let syncInterval = null;
     let gameActive = false;
     let lastMessageId = 0;
+    let isActing = false;
     
     function showPanel(name) {
         document.getElementById("loginPanel").classList.add("hidden");
@@ -242,6 +245,26 @@
         } catch(e) {
             console.error("API错误:", e);
             return { success: false, error: e.message };
+        }
+    }
+    
+    // AI 生成战斗描述
+    async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage) {
+        if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
+            // 没有 Key 时使用简单描述
+            return hitResult === "命中" ? `${playerName} ${actionDesc}，${hitResult}，造成${damage}点伤害！` : `${playerName} ${actionDesc}，${hitResult}！`;
+        }
+        
+        try {
+            const res = await api("generateBattleDesc", {
+                playerName, playerClass, actionDesc, hitResult, damage
+            });
+            if (res.success && res.description) {
+                return res.description;
+            }
+            return hitResult === "命中" ? `${playerName} ${actionDesc}，${hitResult}，造成${damage}点伤害！` : `${playerName} ${actionDesc}，${hitResult}！`;
+        } catch(e) {
+            return hitResult === "命中" ? `${playerName} ${actionDesc}，${hitResult}，造成${damage}点伤害！` : `${playerName} ${actionDesc}，${hitResult}！`;
         }
     }
     
@@ -407,11 +430,12 @@
             💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp}
         `;
         
-        const canAct = myTurn && currentRoom.enemies?.length > 0 && gameActive;
+        const canAct = myTurn && currentRoom.enemies?.length > 0 && gameActive && !isActing;
         document.getElementById("actionArea").style.display = canAct ? "flex" : "none";
     }
     
     async function takeAction() {
+        if (isActing) return;
         if (!currentRoom || currentRoom.turn !== currentPlayer.id) {
             addLog("现在不是你的回合", "system", true);
             return;
@@ -423,9 +447,10 @@
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) return;
         
+        isActing = true;
         const btn = document.getElementById("actBtn");
         btn.disabled = true;
-        btn.textContent = "行动中...";
+        btn.textContent = "AI 思考中...";
         
         try {
             const target = currentRoom.enemies[0];
@@ -444,14 +469,22 @@
             const nextIdx = (currentIdx + 1) % playerList.length;
             const nextTurn = playerList[nextIdx];
             
+            // 先更新游戏状态
             await api("updateGame", {
                 roomId: currentRoom.id,
                 enemies: newEnemies,
                 turn: nextTurn
             });
             
+            // 添加行动日志
             addLog(`${currentPlayer.name} 掷出 ${dice}，${isHit ? "命中 " + damage + " 伤害" : "未命中"}`, "action", true);
-            addLog(`${currentPlayer.name} ${isHit ? `击中了${target.name}` : `攻击被${target.name}闪避`}`, "ai", true);
+            
+            // 调用 AI 生成描述
+            const hitResult = isHit ? "命中" : "未命中";
+            const aiDesc = await generateBattleDescription(
+                currentPlayer.name, currentPlayer.class, actionText, hitResult, damage
+            );
+            addLog(aiDesc, "ai", true);
             
             await refreshState();
             renderGameUI();
@@ -461,8 +494,9 @@
                 gameActive = false;
             }
         } catch(e) {
-            addLog("行动失败", "system", true);
+            addLog("行动失败: " + e.message, "system", true);
         } finally {
+            isActing = false;
             btn.disabled = false;
             btn.textContent = "行动";
             document.getElementById("actionInput").value = "";
@@ -522,7 +556,10 @@
     // 启动
     syncInterval = setInterval(syncLoop, 1500);
     showPanel("login");
-    addLog("欢迎来到 AI 跑团！请创建或恢复角色。", "system", true);
+    addLog("欢迎来到 AI 跑团！AI 主持人将为每场战斗生成独特描述。", "system", true);
+    if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
+        addLog("⚠️ 未配置 Groq API Key，AI 描述将使用简化模式。请在代码中填入你的 Key。", "system", true);
+    }
 </script>
 </body>
 </html>
