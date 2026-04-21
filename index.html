@@ -96,17 +96,16 @@
             justify-content: space-between;
         }
         .combat-log {
-            background: #030807;
-            height: 250px;
-            overflow-y: auto;
-            padding: 10px;
-            border-radius: 16px;
-            font-size: 12px;
-            /* 修复长文本显示不全的问题 */
-            word-wrap: break-word;
-            white-space: normal;
-            word-break: break-word;
-        }
+    background: #030807;
+    height: 250px;
+    overflow-y: auto;
+    padding: 10px;
+    border-radius: 16px;
+    font-size: 12px;
+
+    white-space: pre-wrap;      /* ✅关键 */
+    overflow-wrap: anywhere;    /* ✅关键 */
+}
         .combat-log p {
             margin: 5px 0;
             border-left: 2px solid #dba450;
@@ -504,12 +503,18 @@
         if (actBtn) actBtn.disabled = !canAct;
     }
     
-    async function takeAction() {
-        if (isActing) { addLog("请等待...", "system", true); return; }
-        if (!currentRoom || currentRoom.turn !== currentPlayer.id) { addLog("现在不是你的回合", "system", true); return; }
-        const actionText = document.getElementById("actionInput").value;
-        if (!actionText) { addLog("请输入行动", "system", true); return; }
-        isActing = true;
+   async function takeAction() {
+
+    if (isActing) { addLog("请等待...", "system", true); return; }
+    if (!currentRoom || currentRoom.turn !== currentPlayer.id) { addLog("现在不是你的回合", "system", true); return; }
+
+    const actionText = document.getElementById("actionInput").value;
+    if (!actionText) { addLog("请输入行动", "system", true); return; }
+
+    // ✅ 正确位置：这里！！
+    addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false);
+
+    isActing = true;
         document.getElementById("actBtn").disabled = true;
         document.getElementById("actionInput").disabled = true;
         try {
@@ -573,50 +578,48 @@
     }
     
     async function syncLoop() {
-        try {
-            const res = await fetch(`${WORKER_URL}/state`);
-            const data = await res.json();
-            if (currentPlayer && data.players[currentPlayer.id]) {
-                currentPlayer = data.players[currentPlayer.id];
-                document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
-            }
-            if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
-                const newRoom = data.rooms[currentPlayer.roomId];
-                if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
-                    currentRoom = newRoom;
-                    if (currentRoom.status === "playing" && !gameActive) {
-                        gameActive = true;
-                        showPanel("game");
-                        renderGameUI();
-                        if (currentRoom.currentScene && !window._sceneShown) {
-                            addLog(currentRoom.currentScene, "ai", true);
-                            window._sceneShown = true;
-                        }
-                    } else if (currentRoom.status === "waiting") {
-                        renderRoomUI();
-                    } else if (gameActive) {
-                        renderGameUI();
-                    }
-                }
-            }
-            if (data.messages && data.messages.length) {
-                for (let msg of data.messages) {
-                    if (msg.id > lastMessageId) {
-                        lastMessageId = msg.id;
-                        if (msg.playerName !== currentPlayer?.name) {
-                            addLog(msg.content, msg.type, true, msg.id);
-                        } else {
-                            displayedMessageIds.add(msg.id);
-                        }
-                    }
-                }
-            }
-            document.getElementById("syncStatus").innerHTML = "🟢 已连接";
-        } catch(e) {
-            console.error(e);
-            document.getElementById("syncStatus").innerHTML = "🔴 离线";
+    try {
+        const res = await fetch(`${WORKER_URL}/state`);
+        const data = await res.json();
+
+        if (currentPlayer && data.players[currentPlayer.id]) {
+            currentPlayer = data.players[currentPlayer.id];
+            document.getElementById("playerNameDisplay").innerHTML =
+                `${currentPlayer.name} (${currentPlayer.class})`;
         }
+
+        if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
+            currentRoom = data.rooms[currentPlayer.roomId];
+
+            // ✅ 不再用JSON比较，直接判断状态
+            if (currentRoom.status === "playing") {
+                if (!gameActive) {
+                    gameActive = true;
+                    showPanel("game");
+                    clearLog(); // ✅防止重复
+                }
+                renderGameUI();
+            } else {
+                showPanel("room");
+                renderRoomUI();
+            }
+        }
+
+        // 同步消息
+        if (data.messages && data.messages.length) {
+            for (let msg of data.messages) {
+                if (msg.id > lastMessageId) {
+                    lastMessageId = msg.id;
+                    addLog(msg.content, msg.type, true, msg.id);
+                }
+            }
+        }
+
+        document.getElementById("syncStatus").innerHTML = "🟢 已连接";
+    } catch (e) {
+        document.getElementById("syncStatus").innerHTML = "🔴 离线";
     }
+}
     
     document.getElementById("joinRoomBtn").onclick = joinRoom;
     document.getElementById("actBtn").onclick = takeAction;
