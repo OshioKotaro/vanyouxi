@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 最终修复版</title>
+    <title>🐉 AI跑团 · 稳定版（去重修复）</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -141,7 +141,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 最终修复版</h1>
+    <h1>🐉 AI跑团 · 稳定版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -200,8 +200,7 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    // ⚠️ 请务必填入你的真实 Groq API Key（以 gsk_ 开头）
-    const GROQ_API_KEY = "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";
+    const GROQ_API_KEY = "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";  // 请填入你的 Groq API Key
     
     let currentPlayer = null;
     let currentRoom = null;
@@ -209,6 +208,8 @@
     let gameActive = false;
     let lastMessageId = 0;
     let isActing = false;
+    // 记录已显示的消息ID，防止重复
+    let displayedMessageIds = new Set();
     
     function showPanel(name) {
         document.getElementById("loginPanel").classList.add("hidden");
@@ -217,14 +218,28 @@
         document.getElementById(name + "Panel").classList.remove("hidden");
     }
     
-    function addLog(content, type = "system", skipSync = false) {
+    function addLog(content, type = "system", skipSync = false, messageId = null) {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return;
+        
+        // 如果提供了 messageId 且已经显示过，跳过
+        if (messageId && displayedMessageIds.has(messageId)) {
+            return;
+        }
+        if (messageId) {
+            displayedMessageIds.add(messageId);
+        }
+        
         const p = document.createElement("p");
         const cls = type === "ai" ? "ai-text" : (type === "action" ? "action-text" : "system-text");
         p.innerHTML = `<span class="${cls}">${content}</span>`;
         logDiv.appendChild(p);
         p.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        
+        // 限制日志条目数量，避免内存过大
+        while (logDiv.children.length > 200) {
+            logDiv.removeChild(logDiv.firstChild);
+        }
         
         if (!skipSync && currentPlayer) {
             api("addMessage", { type, playerName: currentPlayer.name, content });
@@ -538,18 +553,25 @@
                     }
                 }
             }
+            // 处理新消息 - 使用 messageId 去重
             if (data.messages && data.messages.length) {
                 for (let msg of data.messages) {
+                    // 使用消息的 id 作为唯一标识，避免重复显示
                     if (msg.id > lastMessageId) {
                         lastMessageId = msg.id;
+                        // 只显示其他玩家或系统消息，不重复显示自己的消息
                         if (msg.playerName !== currentPlayer?.name) {
-                            addLog(msg.content, msg.type, true);
+                            addLog(msg.content, msg.type, true, msg.id);
+                        } else {
+                            // 自己的消息也已经显示过了，只记录 id 但不重复显示
+                            displayedMessageIds.add(msg.id);
                         }
                     }
                 }
             }
             document.getElementById("syncStatus").innerHTML = "🟢 已连接";
         } catch(e) {
+            console.error("同步错误:", e);
             document.getElementById("syncStatus").innerHTML = "🔴 离线";
         }
     }
