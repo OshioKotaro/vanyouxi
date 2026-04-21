@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · AI主持版（修复）</title>
+    <title>🐉 AI跑团 · 最终修复版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -141,7 +141,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · AI主持版（修复）</h1>
+    <h1>🐉 AI跑团 · 最终修复版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -200,7 +200,7 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    // 请填入你的 Groq API Key（以 gsk_ 开头）
+    // ⚠️ 请务必填入你的真实 Groq API Key（以 gsk_ 开头）
     const GROQ_API_KEY = "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";
     
     let currentPlayer = null;
@@ -245,17 +245,26 @@
         }
     }
     
-    // AI 生成战斗描述
     async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage) {
         try {
-            const res = await api("generateBattleDesc", {
-                playerName, playerClass, actionDesc, hitResult, damage
+            const res = await fetch(`${WORKER_URL}/action`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${GROQ_API_KEY}`
+                },
+                body: JSON.stringify({ 
+                    action: "generateBattleDesc", 
+                    data: { playerName, playerClass, actionDesc, hitResult, damage }
+                })
             });
-            if (res.success && res.description) {
-                return res.description;
+            const result = await res.json();
+            if (result.success && result.description) {
+                return result.description;
             }
             return `${playerName} ${hitResult === "命中" ? `的${actionDesc}造成了${damage}点伤害` : "的攻击被闪避了"}！`;
         } catch(e) {
+            console.error("AI生成失败:", e);
             return `${playerName} ${hitResult === "命中" ? `的${actionDesc}造成了${damage}点伤害` : "的攻击被闪避了"}！`;
         }
     }
@@ -556,7 +565,7 @@
     
     syncInterval = setInterval(syncLoop, 1500);
     showPanel("login");
-    addLog("🎲 欢迎来到 AI 跑团！AI 主持人将为每场战斗生成独特描述。", "system", true);
+    addLog("🎲 欢迎来到 AI 跑团！", "system", true);
     if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
         addLog("⚠️ 未配置 Groq API Key，AI 描述将使用简化模式。请在代码中填入你的 Key。", "system", true);
     } else {
