@@ -281,20 +281,33 @@
     }
     
     function addLog(content, type = "system", skipSync = false, messageId = null) {
-        const logDiv = document.getElementById("combatLog");
-        if (!logDiv) return;
-        if (messageId && displayedMessageIds.has(messageId)) return;
-        if (messageId) displayedMessageIds.add(messageId);
-        const p = document.createElement("p");
-        const cls = type === "ai" ? "ai-text" : (type === "action" ? "action-text" : "system-text");
-        p.innerHTML = `<span class="${cls}">${content}</span>`;
-        logDiv.appendChild(p);
-        p.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        while (logDiv.children.length > 200) logDiv.removeChild(logDiv.firstChild);
-        if (!skipSync && currentPlayer) {
-            api("addMessage", { type, playerName: currentPlayer.name, content });
-        }
+    const logDiv = document.getElementById("combatLog");
+    if (!logDiv) return;
+
+    if (messageId && displayedMessageIds.has(messageId)) return;
+    if (messageId) displayedMessageIds.add(messageId);
+
+    const p = document.createElement("p");
+    const cls = type === "ai" ? "ai-text" : (type === "action" ? "action-text" : "system-text");
+    p.innerHTML = `<span class="${cls}">${content}</span>`;
+    logDiv.appendChild(p);
+
+    p.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+    while (logDiv.children.length > 200) {
+        logDiv.removeChild(logDiv.firstChild);
     }
+
+    // ⭐ 关键：带上 roomId
+    if (!skipSync && currentPlayer) {
+        api("addMessage", { 
+            type, 
+            playerName: currentPlayer.name, 
+            content,
+            roomId: currentPlayer.roomId   // ✅ 新增
+        });
+    }
+}
     
     async function api(action, data) {
         try {
@@ -341,7 +354,7 @@
     async function resetRoomState() {
         clearLog();
         try {
-            const res = await fetch(`${WORKER_URL}/state`);
+            const res = await fetch(`${WORKER_URL}/state?roomId=${currentPlayer?.roomId || ""}`);
             const data = await res.json();
             if (data.messages && data.messages.length) {
                 const maxId = Math.max(...data.messages.map(m => m.id), 0);
@@ -503,16 +516,15 @@
         if (actBtn) actBtn.disabled = !canAct;
     }
     
-   async function takeAction() {
-
+  async function takeAction() {
     if (isActing) { addLog("请等待...", "system", true); return; }
     if (!currentRoom || currentRoom.turn !== currentPlayer.id) { addLog("现在不是你的回合", "system", true); return; }
 
     const actionText = document.getElementById("actionInput").value;
     if (!actionText) { addLog("请输入行动", "system", true); return; }
 
-    // ✅ 正确位置：这里！！
-    addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false);
+    // ✅ 放这里（不能放最前面）
+    addLog(`🎯 ${currentPlayer.name}行动：${actionText}`, "action", false);
 
     isActing = true;
         document.getElementById("actBtn").disabled = true;
