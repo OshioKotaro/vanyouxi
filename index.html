@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 完整剧情版（修复显示与同步）</title>
+    <title>🐉 AI跑团 · 稳定剧情版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -142,7 +142,7 @@
         .flex-row { display: flex; gap: 8px; }
         .flex-row button { width: auto; }
         .info-text { font-size: 12px; color: #aaa; margin-top: 5px; text-align: center; }
-        .attr-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+        .attr-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
         .attr-name { width: 60px; }
         .attr-value { width: 40px; text-align: center; }
         .attr-buttons { display: flex; gap: 5px; }
@@ -152,13 +152,12 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 完整剧情版</h1>
+    <h1>🐉 AI跑团 · 稳定剧情版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
     </div>
     
-    <!-- 登录界面 -->
     <div id="loginPanel" class="panel">
         <h3>✨ 创建新角色</h3>
         <div class="form-group">
@@ -190,7 +189,6 @@
         </div>
     </div>
     
-    <!-- 房间界面 -->
     <div id="roomPanel" class="panel hidden">
         <div id="roomInfo"></div>
         <div class="player-list" id="roomPlayerList"></div>
@@ -202,7 +200,6 @@
         </div>
     </div>
     
-    <!-- 游戏界面 -->
     <div id="gamePanel" class="panel hidden">
         <div id="turnIndicator" class="turn-indicator">等待开始...</div>
         <div id="sceneDesc" style="font-size: 13px; margin-bottom: 10px;"></div>
@@ -212,7 +209,7 @@
             <div>📜 冒险记录</div>
             <div id="combatLog" class="combat-log"></div>
             <div class="action-area" id="actionArea">
-                <input id="actionInput" placeholder="描述行动... (攻击/探索/对话/使用技能)" autocomplete="off">
+                <input id="actionInput" placeholder="描述行动... (攻击/探索/对话)" autocomplete="off">
                 <button id="actBtn">行动</button>
             </div>
         </div>
@@ -231,7 +228,7 @@
     let isActing = false;
     let displayedMessageIds = new Set();
     
-    // 属性分配相关
+    // 属性分配
     let pendingAttributes = { str: 10, dex: 10, int: 10, con: 10 };
     let pointsLeft = 20;
     
@@ -241,7 +238,7 @@
         document.getElementById("intVal").innerText = pendingAttributes.int;
         document.getElementById("conVal").innerText = pendingAttributes.con;
         document.getElementById("pointsLeft").innerText = pointsLeft;
-        document.querySelectorAll("[data-delta='1']").forEach(btn => btn.disabled = pointsLeft === 0);
+        document.querySelectorAll("[data-delta='1']").forEach(btn => { btn.disabled = pointsLeft === 0; });
         document.querySelectorAll("[data-delta='-1']").forEach(btn => {
             const attr = btn.getAttribute("data-attr");
             btn.disabled = pendingAttributes[attr] === 10;
@@ -307,20 +304,6 @@
         }
     }
     
-    async function generateNarrative(prompt) {
-        try {
-            const res = await fetch(`${WORKER_URL}/action`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
-                body: JSON.stringify({ action: "generateNarrative", data: { prompt } })
-            });
-            const result = await res.json();
-            return result.success ? result.text : prompt;
-        } catch(e) {
-            return "你环顾四周，没有特别的事情发生。";
-        }
-    }
-    
     async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage) {
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
@@ -347,6 +330,7 @@
         } catch(e) { console.warn(e); }
     }
     
+    // 创建角色
     document.getElementById("createPlayerBtn").onclick = async () => {
         const name = document.getElementById("playerName").value.trim();
         const cls = document.getElementById("playerClass").value;
@@ -391,28 +375,23 @@
             const newRoom = data.rooms[currentPlayer.roomId];
             if (!currentRoom || JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
                 currentRoom = newRoom;
-                if (currentRoom.status === "playing") {
-                    if (!gameActive) {
-                        gameActive = true;
-                        showPanel("game");
-                        renderGameUI();
-                        if (currentRoom.currentScene && !window._sceneShown) {
-                            addLog(currentRoom.currentScene, "ai", true);
-                            window._sceneShown = true;
-                        }
-                    } else {
-                        renderGameUI();
+                if (currentRoom.status === "playing" && !gameActive) {
+                    gameActive = true;
+                    showPanel("game");
+                    renderGameUI();
+                    if (currentRoom.currentScene && !window._sceneShown) {
+                        addLog(currentRoom.currentScene, "ai", true);
+                        window._sceneShown = true;
                     }
                 } else if (currentRoom.status === "waiting") {
                     if (gameActive) gameActive = false;
-                    showPanel("room");
                     renderRoomUI();
+                } else if (gameActive) {
+                    renderGameUI();
                 }
-            } else if (gameActive) {
-                renderGameUI();
             }
         } else {
-            if (gameActive) gameActive = false;
+            // 不在任何房间
             document.getElementById("roomInfo").innerHTML = "<div>暂无房间</div>";
             document.getElementById("roomPlayerList").innerHTML = "";
             document.getElementById("roomActions").innerHTML = `<button id="createRoomBtn">➕ 创建新房间</button>`;
@@ -461,9 +440,8 @@
             window._sceneShown = false;
             showPanel("game");
             renderGameUI();
-            const intro = await generateNarrative("为冒险队伍生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
-            addLog(intro, "ai", false);
-            addLog("你可以进行：探索、对话或攻击（如果有敌人）。", "system", false);
+            addLog(currentRoom.currentScene, "ai", false);
+            addLog(`敌人出现: ${currentRoom.enemies.map(e=>e.name).join(", ")}`, "action", false);
         } else {
             alert("开始失败: " + res.error);
         }
@@ -501,7 +479,7 @@
         } else {
             enemyDiv.innerHTML = "<div>⚔️ 当前没有敌人，你可以探索或对话。</div>";
         }
-        document.getElementById("playerStats").innerHTML = `<strong>${currentPlayer.name}</strong> (${currentPlayer.class}) | ❤️ ${currentPlayer.hp}/${currentPlayer.maxHp} | 💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp} | 💪力量${currentPlayer.attributes.str} 🏹敏捷${currentPlayer.attributes.dex} 🧠智力${currentPlayer.attributes.int} ❤️体质${currentPlayer.attributes.con}`;
+        document.getElementById("playerStats").innerHTML = `<strong>${currentPlayer.name}</strong> (${currentPlayer.class}) | ❤️ ${currentPlayer.hp}/${currentPlayer.maxHp} | 💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp} | 💪${currentPlayer.attributes.str} 🏹${currentPlayer.attributes.dex} 🧠${currentPlayer.attributes.int} ❤️${currentPlayer.attributes.con}`;
         const actionInput = document.getElementById("actionInput");
         const actBtn = document.getElementById("actBtn");
         if (actionInput) actionInput.disabled = !canAct;
@@ -513,13 +491,14 @@
         if (!currentRoom || currentRoom.turn !== currentPlayer.id) { addLog("现在不是你的回合", "system", true); return; }
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) { addLog("请输入行动", "system", true); return; }
+        
+        // 广播玩家的行动意图
+        addLog(`${currentPlayer.name} 尝试：${actionText}`, "action", false);
+        
         isActing = true;
         document.getElementById("actBtn").disabled = true;
         document.getElementById("actionInput").disabled = true;
         try {
-            // 广播玩家行动意图
-            addLog(`${currentPlayer.name} 尝试：${actionText}`, "action", false);
-            
             const lower = actionText.toLowerCase();
             let isCombat = false;
             let target = null;
@@ -529,7 +508,7 @@
                     target = currentRoom.enemies[0];
                 }
             }
-            if (isCombat && target) {
+            if (isCombat) {
                 const dice = Math.floor(Math.random() * 20) + 1;
                 const attackRoll = dice + currentPlayer.atkBonus;
                 const isHit = attackRoll >= (target.ac || 11);
@@ -551,13 +530,10 @@
                 addLog(aiDesc, "ai", false);
                 if (newEnemies.length === 0) {
                     addLog("🏆 战斗胜利！", "ai", false);
-                    const afterBattle = await generateNarrative("战斗结束后，描述场景的变化或新的发现。");
-                    addLog(afterBattle, "ai", false);
                 }
             } else {
-                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。请生成一段简短的描述和可能的结果，并建议是否触发战斗或获得物品。`;
-                const narrative = await generateNarrative(prompt);
-                addLog(narrative, "ai", false);
+                // 非战斗行动，生成简单描述（暂不调用AI，避免复杂）
+                addLog(`${currentPlayer.name} ${actionText}，但似乎没有特别的事情发生。`, "system", false);
                 const playerList = currentRoom.players;
                 const currentIdx = playerList.indexOf(currentPlayer.id);
                 const nextIdx = (currentIdx + 1) % playerList.length;
@@ -595,9 +571,8 @@
                             addLog(currentRoom.currentScene, "ai", true);
                             window._sceneShown = true;
                         }
-                    } else if (currentRoom.status === "waiting" && gameActive) {
-                        gameActive = false;
-                        showPanel("room");
+                    } else if (currentRoom.status === "waiting") {
+                        if (gameActive) gameActive = false;
                         renderRoomUI();
                     } else if (gameActive) {
                         renderGameUI();
