@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 完整剧情版（修复长文本显示）</title>
+    <title>🐉 AI跑团 · 最终修复版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -96,16 +96,16 @@
             justify-content: space-between;
         }
         .combat-log {
-    background: #030807;
-    height: 250px;
-    overflow-y: auto;
-    padding: 10px;
-    border-radius: 16px;
-    font-size: 12px;
-
-    white-space: pre-wrap;      /* ✅关键 */
-    overflow-wrap: anywhere;    /* ✅关键 */
-}
+            background: #030807;
+            height: 250px;
+            overflow-y: auto;
+            padding: 10px;
+            border-radius: 16px;
+            font-size: 12px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
         .combat-log p {
             margin: 5px 0;
             border-left: 2px solid #dba450;
@@ -151,13 +151,12 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 完整剧情版</h1>
+    <h1>🐉 AI跑团 · 最终修复版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
     </div>
     
-    <!-- 登录界面 -->
     <div id="loginPanel" class="panel">
         <h3>✨ 创建新角色</h3>
         <div class="form-group">
@@ -189,7 +188,6 @@
         </div>
     </div>
     
-    <!-- 房间界面 -->
     <div id="roomPanel" class="panel hidden">
         <div id="roomInfo"></div>
         <div class="player-list" id="roomPlayerList"></div>
@@ -201,7 +199,6 @@
         </div>
     </div>
     
-    <!-- 游戏界面 -->
     <div id="gamePanel" class="panel hidden">
         <div id="turnIndicator" class="turn-indicator">等待开始...</div>
         <div id="sceneDesc" style="font-size: 13px; margin-bottom: 10px;"></div>
@@ -220,7 +217,7 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    const GROQ_API_KEY = "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";  // 请填入你的 Groq API Key
+    const GROQ_API_KEY = "gsk_你的GroqKey";  // 请填入你的 Groq API Key
     
     let currentPlayer = null;
     let currentRoom = null;
@@ -230,7 +227,6 @@
     let isActing = false;
     let displayedMessageIds = new Set();
     
-    // 属性分配相关
     let pendingAttributes = { str: 10, dex: 10, int: 10, con: 10 };
     let pointsLeft = 20;
     
@@ -240,11 +236,7 @@
         document.getElementById("intVal").innerText = pendingAttributes.int;
         document.getElementById("conVal").innerText = pendingAttributes.con;
         document.getElementById("pointsLeft").innerText = pointsLeft;
-        // 启用/禁用加减按钮
-        document.querySelectorAll("[data-delta='1']").forEach(btn => {
-            const attr = btn.getAttribute("data-attr");
-            btn.disabled = pointsLeft === 0;
-        });
+        document.querySelectorAll("[data-delta='1']").forEach(btn => btn.disabled = pointsLeft === 0);
         document.querySelectorAll("[data-delta='-1']").forEach(btn => {
             const attr = btn.getAttribute("data-attr");
             btn.disabled = pendingAttributes[attr] === 10;
@@ -281,33 +273,20 @@
     }
     
     function addLog(content, type = "system", skipSync = false, messageId = null) {
-    const logDiv = document.getElementById("combatLog");
-    if (!logDiv) return;
-
-    if (messageId && displayedMessageIds.has(messageId)) return;
-    if (messageId) displayedMessageIds.add(messageId);
-
-    const p = document.createElement("p");
-    const cls = type === "ai" ? "ai-text" : (type === "action" ? "action-text" : "system-text");
-    p.innerHTML = `<span class="${cls}">${content}</span>`;
-    logDiv.appendChild(p);
-
-    p.scrollIntoView({ behavior: "smooth", block: "nearest" });
-
-    while (logDiv.children.length > 200) {
-        logDiv.removeChild(logDiv.firstChild);
+        const logDiv = document.getElementById("combatLog");
+        if (!logDiv) return;
+        if (messageId && displayedMessageIds.has(messageId)) return;
+        if (messageId) displayedMessageIds.add(messageId);
+        const p = document.createElement("p");
+        const cls = type === "ai" ? "ai-text" : (type === "action" ? "action-text" : "system-text");
+        p.innerHTML = `<span class="${cls}">${content}</span>`;
+        logDiv.appendChild(p);
+        p.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        while (logDiv.children.length > 200) logDiv.removeChild(logDiv.firstChild);
+        if (!skipSync && currentPlayer && currentPlayer.roomId) {
+            api("addMessage", { type, playerName: currentPlayer.name, content, roomId: currentPlayer.roomId });
+        }
     }
-
-    // ⭐ 关键：带上 roomId
-    if (!skipSync && currentPlayer) {
-        api("addMessage", { 
-            type, 
-            playerName: currentPlayer.name, 
-            content,
-            roomId: currentPlayer.roomId   // ✅ 新增
-        });
-    }
-}
     
     async function api(action, data) {
         try {
@@ -353,17 +332,18 @@
     
     async function resetRoomState() {
         clearLog();
-        try {
-            const res = await fetch(`${WORKER_URL}/state?roomId=${currentPlayer?.roomId || ""}`);
-            const data = await res.json();
-            if (data.messages && data.messages.length) {
-                const maxId = Math.max(...data.messages.map(m => m.id), 0);
-                lastMessageId = maxId;
-            }
-        } catch(e) { console.warn(e); }
+        if (currentPlayer && currentPlayer.roomId) {
+            try {
+                const res = await fetch(`${WORKER_URL}/state?roomId=${currentPlayer.roomId}`);
+                const data = await res.json();
+                if (data.messages && data.messages.length) {
+                    const maxId = Math.max(...data.messages.map(m => m.id), 0);
+                    lastMessageId = maxId;
+                }
+            } catch(e) { console.warn(e); }
+        }
     }
     
-    // 创建角色（带属性分配）
     document.getElementById("createPlayerBtn").onclick = async () => {
         const name = document.getElementById("playerName").value.trim();
         const cls = document.getElementById("playerClass").value;
@@ -399,25 +379,29 @@
     };
     
     async function refreshState() {
-        const res = await fetch(`/state?roomId=${currentRoom.id}`);
+        if (!currentPlayer) return;
+        const url = `${WORKER_URL}/state${currentPlayer.roomId ? `?roomId=${currentPlayer.roomId}` : ""}`;
+        const res = await fetch(url);
         const data = await res.json();
         if (currentPlayer && data.players[currentPlayer.id]) {
             currentPlayer = data.players[currentPlayer.id];
+            document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
         }
         if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
             currentRoom = data.rooms[currentPlayer.roomId];
-            if (currentRoom.status === "playing" && !gameActive) {
-                gameActive = true;
-                showPanel("game");
-                renderGameUI();
-                if (currentRoom.currentScene && !window._sceneShown) {
-                    addLog(currentRoom.currentScene, "ai", true);
-                    window._sceneShown = true;
+            if (currentRoom.status === "playing") {
+                if (!gameActive) {
+                    gameActive = true;
+                    showPanel("game");
+                    clearLog();
+                    if (currentRoom.currentScene && !window._sceneShown) {
+                        addLog(currentRoom.currentScene, "ai", true);
+                        window._sceneShown = true;
+                    }
                 }
+                renderGameUI();
             } else if (currentRoom.status === "waiting") {
                 renderRoomUI();
-            } else if (gameActive) {
-                renderGameUI();
             }
         } else {
             document.getElementById("roomInfo").innerHTML = "<div>暂无房间</div>";
@@ -431,6 +415,7 @@
         const res = await api("createRoom", { roomName: `${currentPlayer.name}的房间`, playerId: currentPlayer.id });
         if (res.success) {
             currentRoom = res.room;
+            currentPlayer.roomId = currentRoom.id;
             await resetRoomState();
             await refreshState();
         } else {
@@ -444,6 +429,7 @@
         const res = await api("joinRoom", { roomId: code, playerId: currentPlayer.id });
         if (res.success) {
             currentRoom = res.room;
+            currentPlayer.roomId = currentRoom.id;
             await resetRoomState();
             await refreshState();
         } else {
@@ -468,7 +454,6 @@
             window._sceneShown = false;
             showPanel("game");
             renderGameUI();
-            // 生成开场剧情
             const intro = await generateNarrative("为冒险队伍生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
             addLog(intro, "ai", false);
             addLog("你可以进行：探索、对话或攻击（如果有敌人）。", "system", false);
@@ -516,22 +501,19 @@
         if (actBtn) actBtn.disabled = !canAct;
     }
     
-  async function takeAction() {
-    if (isActing) { addLog("请等待...", "system", true); return; }
-    if (!currentRoom || currentRoom.turn !== currentPlayer.id) { addLog("现在不是你的回合", "system", true); return; }
-
-    const actionText = document.getElementById("actionInput").value;
-    if (!actionText) { addLog("请输入行动", "system", true); return; }
-
-    // ✅ 放这里（不能放最前面）
-    addLog(`🎯 ${currentPlayer.name}行动：${actionText}`, "action", false);
-
-    isActing = true;
+    async function takeAction() {
+        if (isActing) { addLog("请等待...", "system", true); return; }
+        if (!currentRoom || currentRoom.turn !== currentPlayer.id) { addLog("现在不是你的回合", "system", true); return; }
+        const actionText = document.getElementById("actionInput").value;
+        if (!actionText) { addLog("请输入行动", "system", true); return; }
+        
+        addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false);
+        
+        isActing = true;
         document.getElementById("actBtn").disabled = true;
         document.getElementById("actionInput").disabled = true;
         try {
             const lower = actionText.toLowerCase();
-            // 判断是否攻击（如果有敌人）
             let isCombat = false;
             let target = null;
             if (currentRoom.enemies && currentRoom.enemies.length > 0) {
@@ -541,7 +523,6 @@
                 }
             }
             if (isCombat) {
-                // 战斗逻辑
                 const dice = Math.floor(Math.random() * 20) + 1;
                 const attackRoll = dice + currentPlayer.atkBonus;
                 const isHit = attackRoll >= (target.ac || 11);
@@ -567,11 +548,9 @@
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                // 非战斗：探索/对话/其他
                 const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。请生成一段简短的描述和可能的结果，并建议是否触发战斗或获得物品。`;
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
-                // 回合切换
                 const playerList = currentRoom.players;
                 const currentIdx = playerList.indexOf(currentPlayer.id);
                 const nextIdx = (currentIdx + 1) % playerList.length;
@@ -590,48 +569,52 @@
     }
     
     async function syncLoop() {
-    try {
-        const res = await fetch(`${WORKER_URL}/state`);
-        const data = await res.json();
-
-        if (currentPlayer && data.players[currentPlayer.id]) {
-            currentPlayer = data.players[currentPlayer.id];
-            document.getElementById("playerNameDisplay").innerHTML =
-                `${currentPlayer.name} (${currentPlayer.class})`;
-        }
-
-        if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
-            currentRoom = data.rooms[currentPlayer.roomId];
-
-            // ✅ 不再用JSON比较，直接判断状态
-            if (currentRoom.status === "playing") {
-                if (!gameActive) {
+        try {
+            if (!currentPlayer) return;
+            const url = `${WORKER_URL}/state${currentPlayer.roomId ? `?roomId=${currentPlayer.roomId}` : ""}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (currentPlayer && data.players[currentPlayer.id]) {
+                currentPlayer = data.players[currentPlayer.id];
+                document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
+            }
+            if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
+                const newRoom = data.rooms[currentPlayer.roomId];
+                if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
+                    currentRoom = newRoom;
+                    if (currentRoom.status === "playing" && !gameActive) {
+                        gameActive = true;
+                        showPanel("game");
+                        clearLog();
+                        if (currentRoom.currentScene && !window._sceneShown) {
+                            addLog(currentRoom.currentScene, "ai", true);
+                            window._sceneShown = true;
+                        }
+                    } else if (currentRoom.status === "waiting") {
+                        renderRoomUI();
+                    }
+                } else if (currentRoom.status === "playing" && !gameActive) {
                     gameActive = true;
                     showPanel("game");
-                    clearLog(); // ✅防止重复
-                }
-                renderGameUI();
-            } else {
-                showPanel("room");
-                renderRoomUI();
-            }
-        }
-
-        // 同步消息
-        if (data.messages && data.messages.length) {
-            for (let msg of data.messages) {
-                if (msg.id > lastMessageId) {
-                    lastMessageId = msg.id;
-                    addLog(msg.content, msg.type, true, msg.id);
+                    renderGameUI();
+                } else if (gameActive) {
+                    renderGameUI();
                 }
             }
+            if (data.messages && data.messages.length) {
+                for (let msg of data.messages) {
+                    if (msg.id > lastMessageId) {
+                        lastMessageId = msg.id;
+                        addLog(msg.content, msg.type, true, msg.id);
+                    }
+                }
+            }
+            document.getElementById("syncStatus").innerHTML = "🟢 已连接";
+        } catch(e) {
+            console.error(e);
+            document.getElementById("syncStatus").innerHTML = "🔴 离线";
         }
-
-        document.getElementById("syncStatus").innerHTML = "🟢 已连接";
-    } catch (e) {
-        document.getElementById("syncStatus").innerHTML = "🔴 离线";
     }
-}
     
     document.getElementById("joinRoomBtn").onclick = joinRoom;
     document.getElementById("actBtn").onclick = takeAction;
