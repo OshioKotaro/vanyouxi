@@ -97,7 +97,7 @@
         }
         .combat-log {
             background: #030807;
-            height: 280px;
+            height: 250px;
             overflow-y: auto;
             padding: 10px;
             border-radius: 16px;
@@ -141,6 +141,12 @@
         .flex-row { display: flex; gap: 8px; }
         .flex-row button { width: auto; }
         .info-text { font-size: 12px; color: #aaa; margin-top: 5px; text-align: center; }
+        .attr-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+        .attr-name { width: 60px; }
+        .attr-value { width: 40px; text-align: center; }
+        .attr-buttons { display: flex; gap: 5px; }
+        .attr-buttons button { width: 30px; padding: 2px; }
+        .points-left { font-weight: bold; color: gold; }
     </style>
 </head>
 <body>
@@ -150,8 +156,7 @@
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
     </div>
-
-    <!-- 登录界面 -->
+    
     <div id="loginPanel" class="panel">
         <h3>✨ 创建新角色</h3>
         <div class="form-group">
@@ -166,7 +171,14 @@
                 <option value="游侠">🏹 游侠</option>
             </select>
         </div>
-        <button id="createPlayerBtn">创建并进入大厅</button>
+        <div id="attributePanel" style="margin-top: 12px;">
+            <div style="font-size: 14px; margin-bottom: 8px;">📊 分配属性点（剩余 <span id="pointsLeft" class="points-left">20</span> 点）</div>
+            <div class="attr-row"><span class="attr-name">💪 力量</span><span id="strVal" class="attr-value">10</span><div class="attr-buttons"><button data-attr="str" data-delta="1">+</button><button data-attr="str" data-delta="-1">-</button></div><span class="info-text">（影响攻击力）</span></div>
+            <div class="attr-row"><span class="attr-name">🏹 敏捷</span><span id="dexVal" class="attr-value">10</span><div class="attr-buttons"><button data-attr="dex" data-delta="1">+</button><button data-attr="dex" data-delta="-1">-</button></div><span class="info-text">（影响闪避）</span></div>
+            <div class="attr-row"><span class="attr-name">🧠 智力</span><span id="intVal" class="attr-value">10</span><div class="attr-buttons"><button data-attr="int" data-delta="1">+</button><button data-attr="int" data-delta="-1">-</button></div><span class="info-text">（影响法术）</span></div>
+            <div class="attr-row"><span class="attr-name">❤️ 体质</span><span id="conVal" class="attr-value">10</span><div class="attr-buttons"><button data-attr="con" data-delta="1">+</button><button data-attr="con" data-delta="-1">-</button></div><span class="info-text">（影响生命）</span></div>
+        </div>
+        <button id="createPlayerBtn" style="margin-top: 12px;">创建并进入大厅</button>
         <hr>
         <h3>🔑 恢复已有角色</h3>
         <div class="form-group">
@@ -175,8 +187,7 @@
             <button id="restoreBtn" style="margin-top: 8px;">恢复角色</button>
         </div>
     </div>
-
-    <!-- 房间界面 -->
+    
     <div id="roomPanel" class="panel hidden">
         <div id="roomInfo"></div>
         <div class="player-list" id="roomPlayerList"></div>
@@ -187,8 +198,7 @@
             <button id="joinRoomBtn" style="width: auto;">加入</button>
         </div>
     </div>
-
-    <!-- 游戏界面 -->
+    
     <div id="gamePanel" class="panel hidden">
         <div id="turnIndicator" class="turn-indicator">等待开始...</div>
         <div id="sceneDesc" style="font-size: 13px; margin-bottom: 10px;"></div>
@@ -208,7 +218,7 @@
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
     const GROQ_API_KEY = "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";  // 请填入你的 Groq API Key
-
+    
     let currentPlayer = null;
     let currentRoom = null;
     let syncInterval = null;
@@ -216,21 +226,52 @@
     let lastMessageId = 0;
     let isActing = false;
     let displayedMessageIds = new Set();
-
+    
+    let pendingAttributes = { str: 10, dex: 10, int: 10, con: 10 };
+    let pointsLeft = 20;
+    
+    function updateAttributeUI() {
+        document.getElementById("strVal").innerText = pendingAttributes.str;
+        document.getElementById("dexVal").innerText = pendingAttributes.dex;
+        document.getElementById("intVal").innerText = pendingAttributes.int;
+        document.getElementById("conVal").innerText = pendingAttributes.con;
+        document.getElementById("pointsLeft").innerText = pointsLeft;
+        document.querySelectorAll("[data-delta='1']").forEach(btn => { btn.disabled = pointsLeft === 0; });
+        document.querySelectorAll("[data-delta='-1']").forEach(btn => {
+            const attr = btn.getAttribute("data-attr");
+            btn.disabled = pendingAttributes[attr] === 10;
+        });
+    }
+    
+    function initAttributeControls() {
+        document.querySelectorAll("[data-delta]").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const attr = btn.getAttribute("data-attr");
+                const delta = parseInt(btn.getAttribute("data-delta"));
+                if (delta === 1 && pointsLeft === 0) return;
+                if (delta === -1 && pendingAttributes[attr] === 10) return;
+                pendingAttributes[attr] += delta;
+                pointsLeft -= delta;
+                updateAttributeUI();
+            });
+        });
+        updateAttributeUI();
+    }
+    
     function showPanel(name) {
         document.getElementById("loginPanel").classList.add("hidden");
         document.getElementById("roomPanel").classList.add("hidden");
         document.getElementById("gamePanel").classList.add("hidden");
         document.getElementById(name + "Panel").classList.remove("hidden");
     }
-
+    
     function clearLog() {
         const logDiv = document.getElementById("combatLog");
         if (logDiv) logDiv.innerHTML = "";
         displayedMessageIds.clear();
         lastMessageId = 0;
     }
-
+    
     function addLog(content, type = "system", skipSync = false, messageId = null) {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return;
@@ -246,72 +287,67 @@
             api("addMessage", { type, playerName: currentPlayer.name, content });
         }
     }
-
+    
     async function api(action, data) {
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action, data }),
+                body: JSON.stringify({ action, data })
             });
             return await res.json();
-        } catch (e) {
+        } catch(e) {
             console.error("API错误:", e);
             return { success: false, error: e.message };
         }
     }
-
+    
     async function generateNarrative(prompt) {
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-                body: JSON.stringify({ action: "generateNarrative", data: { prompt } }),
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+                body: JSON.stringify({ action: "generateNarrative", data: { prompt } })
             });
             const result = await res.json();
             return result.success ? result.text : prompt;
-        } catch (e) {
+        } catch(e) {
             return "你环顾四周，没有特别的事情发生。";
         }
     }
-
+    
     async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage) {
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-                body: JSON.stringify({ action: "generateBattleDesc", data: { playerName, playerClass, actionDesc, hitResult, damage } }),
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+                body: JSON.stringify({ action: "generateBattleDesc", data: { playerName, playerClass, actionDesc, hitResult, damage } })
             });
             const result = await res.json();
             return result.description || `${playerName}的攻击！`;
-        } catch (e) {
+        } catch(e) {
             return `${playerName}的攻击！`;
         }
     }
-
+    
     async function resetRoomState() {
         clearLog();
         try {
             const res = await fetch(`${WORKER_URL}/state`);
             const data = await res.json();
             if (data.messages && data.messages.length) {
-                const maxId = Math.max(...data.messages.map((m) => m.id), 0);
+                const maxId = Math.max(...data.messages.map(m => m.id), 0);
                 lastMessageId = maxId;
             }
-        } catch (e) {
-            console.warn(e);
-        }
+        } catch(e) { console.warn(e); }
     }
-
-    // 创建角色
+    
     document.getElementById("createPlayerBtn").onclick = async () => {
         const name = document.getElementById("playerName").value.trim();
         const cls = document.getElementById("playerClass").value;
-        if (!name) {
-            alert("请输入名字");
-            return;
-        }
-        const res = await api("createPlayer", { name, class: cls });
+        if (!name) { alert("请输入名字"); return; }
+        const attributes = { ...pendingAttributes };
+        const res = await api("createPlayer", { name, class: cls, attributes });
         if (res.success) {
             currentPlayer = res.player;
             localStorage.setItem("playerId", currentPlayer.id);
@@ -323,13 +359,10 @@
             alert("创建失败");
         }
     };
-
+    
     document.getElementById("restoreBtn").onclick = async () => {
         const id = document.getElementById("restoreId").value.trim();
-        if (!id) {
-            alert("请输入角色ID");
-            return;
-        }
+        if (!id) { alert("请输入角色ID"); return; }
         const res = await api("getPlayer", { playerId: id });
         if (res.success && res.player) {
             currentPlayer = res.player;
@@ -342,7 +375,7 @@
             alert("角色不存在或已过期");
         }
     };
-
+    
     async function refreshState() {
         const res = await fetch(`${WORKER_URL}/state`);
         const data = await res.json();
@@ -351,36 +384,39 @@
         }
         if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
             const newRoom = data.rooms[currentPlayer.roomId];
-            if (!currentRoom || JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
+            if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
                 currentRoom = newRoom;
-                if (currentRoom.status === "playing") {
-                    if (!gameActive) {
-                        gameActive = true;
-                        showPanel("game");
-                        renderGameUI();
-                        if (currentRoom.currentScene && !window._sceneShown) {
-                            addLog(currentRoom.currentScene, "ai", true);
-                            window._sceneShown = true;
-                        }
-                    } else {
-                        renderGameUI();
+                if (currentRoom.status === "playing" && !gameActive) {
+                    gameActive = true;
+                    showPanel("game");
+                    renderGameUI();
+                    if (currentRoom.currentScene && !window._sceneShown) {
+                        addLog(currentRoom.currentScene, "ai", true);
+                        window._sceneShown = true;
                     }
                 } else if (currentRoom.status === "waiting") {
-                    if (gameActive) gameActive = false;
-                    showPanel("room");
                     renderRoomUI();
+                } else if (gameActive) {
+                    renderGameUI();
+                }
+            } else if (currentRoom.status === "playing" && !gameActive) {
+                // 强制同步游戏状态
+                gameActive = true;
+                showPanel("game");
+                renderGameUI();
+                if (currentRoom.currentScene && !window._sceneShown) {
+                    addLog(currentRoom.currentScene, "ai", true);
+                    window._sceneShown = true;
                 }
             }
         } else {
-            // 不在房间
-            if (gameActive) gameActive = false;
             document.getElementById("roomInfo").innerHTML = "<div>暂无房间</div>";
             document.getElementById("roomPlayerList").innerHTML = "";
             document.getElementById("roomActions").innerHTML = `<button id="createRoomBtn">➕ 创建新房间</button>`;
             document.getElementById("createRoomBtn")?.addEventListener("click", createRoom);
         }
     }
-
+    
     async function createRoom() {
         const res = await api("createRoom", { roomName: `${currentPlayer.name}的房间`, playerId: currentPlayer.id });
         if (res.success) {
@@ -391,7 +427,7 @@
             alert("创建失败: " + (res.error || "未知错误"));
         }
     }
-
+    
     async function joinRoom() {
         const code = document.getElementById("joinRoomCode").value.trim().toUpperCase();
         if (!code) return;
@@ -404,7 +440,7 @@
             alert("加入失败: " + res.error);
         }
     }
-
+    
     async function setReady() {
         const newReady = !currentPlayer.isReady;
         const res = await api("playerReady", { playerId: currentPlayer.id, isReady: newReady });
@@ -413,7 +449,7 @@
             await refreshState();
         }
     }
-
+    
     async function startGame() {
         const res = await api("startGame", { roomId: currentRoom.id, playerId: currentPlayer.id });
         if (res.success) {
@@ -425,35 +461,33 @@
             const intro = await generateNarrative("为冒险队伍生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
             addLog(intro, "ai", false);
             addLog("你可以进行：探索、对话或攻击（如果有敌人）。", "system", false);
+            // 强制刷新其他玩家
+            await refreshState();
         } else {
             alert("开始失败: " + res.error);
         }
     }
-
+    
     function renderRoomUI() {
         if (!currentRoom) return;
         const isHost = currentRoom.hostId === currentPlayer.id;
         document.getElementById("roomInfo").innerHTML = `<div class="room-code">🏠 房间码: ${currentRoom.id}</div><div>状态: 等待中</div>`;
-        fetch(`${WORKER_URL}/state`)
-            .then((r) => r.json())
-            .then((data) => {
-                const playersData = data.players;
-                let html = "";
-                for (let pid of currentRoom.players) {
-                    const p = playersData[pid];
-                    if (p) {
-                        html += `<div class="player-card ${p.isReady ? "ready" : ""} ${pid === currentRoom.hostId ? "host" : ""}">${p.name} (${p.class}) ${p.isReady ? "✓" : "○"}</div>`;
-                    }
+        fetch(`${WORKER_URL}/state`).then(r=>r.json()).then(data=>{
+            const playersData = data.players;
+            let html = "";
+            for (let pid of currentRoom.players) {
+                const p = playersData[pid];
+                if (p) {
+                    html += `<div class="player-card ${p.isReady ? 'ready' : ''} ${pid === currentRoom.hostId ? 'host' : ''}">${p.name} (${p.class}) ${p.isReady ? '✓' : '○'}</div>`;
                 }
-                document.getElementById("roomPlayerList").innerHTML = html || "<div>等待玩家...</div>";
-            });
-        document.getElementById("roomActions").innerHTML = `<button id="readyBtn" style="margin-bottom: 8px;">${currentPlayer.isReady ? "取消准备" : "准备就绪"}</button>${
-            isHost ? `<button id="startGameBtn">开始游戏</button>` : '<div class="info-text">等待房主开始...</div>'
-        }`;
+            }
+            document.getElementById("roomPlayerList").innerHTML = html || "<div>等待玩家...</div>";
+        });
+        document.getElementById("roomActions").innerHTML = `<button id="readyBtn" style="margin-bottom: 8px;">${currentPlayer.isReady ? '取消准备' : '准备就绪'}</button>${isHost ? `<button id="startGameBtn">开始游戏</button>` : '<div class="info-text">等待房主开始...</div>'}`;
         document.getElementById("readyBtn")?.addEventListener("click", setReady);
         document.getElementById("startGameBtn")?.addEventListener("click", startGame);
     }
-
+    
     function renderGameUI() {
         if (!currentRoom) return;
         const myTurn = currentRoom.turn === currentPlayer.id;
@@ -462,35 +496,26 @@
         document.getElementById("sceneDesc").innerHTML = currentRoom.currentScene || "冒险继续...";
         const enemyDiv = document.getElementById("enemyContainer");
         if (currentRoom.enemies && currentRoom.enemies.length > 0) {
-            enemyDiv.innerHTML = currentRoom.enemies.map((e) => `<div class="enemy-card"><span>👾 ${e.name}</span><span>❤️ ${e.hp}/${e.maxHp}</span></div>`).join("");
+            enemyDiv.innerHTML = currentRoom.enemies.map(e => `<div class="enemy-card"><span>👾 ${e.name}</span><span>❤️ ${e.hp}/${e.maxHp}</span></div>`).join("");
         } else {
             enemyDiv.innerHTML = "<div>⚔️ 当前没有敌人，你可以探索或对话。</div>";
         }
-        document.getElementById("playerStats").innerHTML = `<strong>${currentPlayer.name}</strong> (${currentPlayer.class}) | ❤️ ${currentPlayer.hp}/${currentPlayer.maxHp} | 💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp}`;
+        document.getElementById("playerStats").innerHTML = `<strong>${currentPlayer.name}</strong> (${currentPlayer.class}) | ❤️ ${currentPlayer.hp}/${currentPlayer.maxHp} | 💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp} | 💪力量${currentPlayer.attributes.str} 🏹敏捷${currentPlayer.attributes.dex} 🧠智力${currentPlayer.attributes.int} ❤️体质${currentPlayer.attributes.con}`;
         const actionInput = document.getElementById("actionInput");
         const actBtn = document.getElementById("actBtn");
         if (actionInput) actionInput.disabled = !canAct;
         if (actBtn) actBtn.disabled = !canAct;
     }
-
+    
     async function takeAction() {
-        if (isActing) {
-            addLog("请等待...", "system", true);
-            return;
-        }
-        if (!currentRoom || currentRoom.turn !== currentPlayer.id) {
-            addLog("现在不是你的回合", "system", true);
-            return;
-        }
+        if (isActing) { addLog("请等待...", "system", true); return; }
+        if (!currentRoom || currentRoom.turn !== currentPlayer.id) { addLog("现在不是你的回合", "system", true); return; }
         const actionText = document.getElementById("actionInput").value;
-        if (!actionText) {
-            addLog("请输入行动", "system", true);
-            return;
-        }
-
-        // 广播玩家尝试的行动
+        if (!actionText) { addLog("请输入行动", "system", true); return; }
+        
+        // 广播玩家行动（让所有人都能看到）
         addLog(`${currentPlayer.name} 尝试：${actionText}`, "action", false);
-
+        
         isActing = true;
         document.getElementById("actBtn").disabled = true;
         document.getElementById("actionInput").disabled = true;
@@ -514,7 +539,7 @@
                     target.hp -= damage;
                     if (target.hp < 0) target.hp = 0;
                 }
-                const newEnemies = currentRoom.enemies.filter((e) => e.hp > 0);
+                const newEnemies = currentRoom.enemies.filter(e => e.hp > 0);
                 const playerList = currentRoom.players;
                 const currentIdx = playerList.indexOf(currentPlayer.id);
                 const nextIdx = (currentIdx + 1) % playerList.length;
@@ -530,7 +555,7 @@
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。请生成一段简短的描述和可能的结果。`;
+                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。请生成一段简短的描述和可能的结果，并建议是否触发战斗或获得物品。`;
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
                 const playerList = currentRoom.players;
@@ -542,14 +567,14 @@
             await refreshState();
             renderGameUI();
             document.getElementById("actionInput").value = "";
-        } catch (e) {
+        } catch(e) {
             addLog("行动失败: " + e.message, "system", true);
         } finally {
             isActing = false;
             renderGameUI();
         }
     }
-
+    
     async function syncLoop() {
         try {
             const res = await fetch(`${WORKER_URL}/state`);
@@ -560,24 +585,29 @@
             }
             if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
                 const newRoom = data.rooms[currentPlayer.roomId];
-                if (!currentRoom || JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
+                if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
                     currentRoom = newRoom;
-                    if (currentRoom.status === "playing") {
-                        if (!gameActive) {
-                            gameActive = true;
-                            showPanel("game");
-                            renderGameUI();
-                            if (currentRoom.currentScene && !window._sceneShown) {
-                                addLog(currentRoom.currentScene, "ai", true);
-                                window._sceneShown = true;
-                            }
-                        } else {
-                            renderGameUI();
+                    if (currentRoom.status === "playing" && !gameActive) {
+                        gameActive = true;
+                        showPanel("game");
+                        renderGameUI();
+                        if (currentRoom.currentScene && !window._sceneShown) {
+                            addLog(currentRoom.currentScene, "ai", true);
+                            window._sceneShown = true;
                         }
                     } else if (currentRoom.status === "waiting") {
-                        if (gameActive) gameActive = false;
-                        showPanel("room");
                         renderRoomUI();
+                    } else if (gameActive) {
+                        renderGameUI();
+                    }
+                } else if (currentRoom.status === "playing" && !gameActive) {
+                    // 强制同步
+                    gameActive = true;
+                    showPanel("game");
+                    renderGameUI();
+                    if (currentRoom.currentScene && !window._sceneShown) {
+                        addLog(currentRoom.currentScene, "ai", true);
+                        window._sceneShown = true;
                     }
                 }
             }
@@ -594,24 +624,19 @@
                 }
             }
             document.getElementById("syncStatus").innerHTML = "🟢 已连接";
-        } catch (e) {
+        } catch(e) {
             console.error(e);
             document.getElementById("syncStatus").innerHTML = "🔴 离线";
         }
     }
-
+    
     document.getElementById("joinRoomBtn").onclick = joinRoom;
     document.getElementById("actBtn").onclick = takeAction;
-    document.getElementById("actionInput").addEventListener("keypress", (e) => {
-        if (e.key === "Enter" && !isActing) {
-            e.preventDefault();
-            takeAction();
-        }
-    });
-
+    document.getElementById("actionInput").addEventListener("keypress", (e) => { if (e.key === "Enter" && !isActing) { e.preventDefault(); takeAction(); } });
+    initAttributeControls();
     syncInterval = setInterval(syncLoop, 1000);
     showPanel("login");
-    addLog("🎲 欢迎来到 AI 跑团！创建角色并进入大厅。", "system", true);
+    addLog("🎲 欢迎来到 AI 跑团！创建角色并分配属性点。", "system", true);
     if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
         addLog("⚠️ 未配置 Groq API Key，AI 描述将使用简化模式。请在代码中填入你的 Key。", "system", true);
     } else {
