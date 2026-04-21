@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 最终修复版</title>
+    <title>🐉 AI跑团 · 完整回合制（玩家→敌人循环）</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -151,7 +151,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 最终修复版</h1>
+    <h1>🐉 AI跑团 · 完整回合制</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -484,9 +484,11 @@
     
     function renderGameUI() {
         if (!currentRoom) return;
-        const myTurn = currentRoom.turn === currentPlayer.id;
+        const myTurn = (currentRoom.phase === "player" && currentRoom.players[currentRoom.currentTurnIndex] === currentPlayer.id);
         const canAct = myTurn && gameActive && !isActing;
-        document.getElementById("turnIndicator").innerHTML = myTurn ? "🎲 轮到你了！" : "⏳ 等待其他玩家...";
+        document.getElementById("turnIndicator").innerHTML = currentRoom.phase === "player" 
+            ? `🎲 玩家回合：${currentRoom.players[currentRoom.currentTurnIndex] === currentPlayer.id ? "轮到你了！" : "等待其他玩家..."}`
+            : "⚔️ 敌人回合...";
         document.getElementById("sceneDesc").innerHTML = currentRoom.currentScene || "冒险继续...";
         const enemyDiv = document.getElementById("enemyContainer");
         if (currentRoom.enemies && currentRoom.enemies.length > 0) {
@@ -501,9 +503,31 @@
         if (actBtn) actBtn.disabled = !canAct;
     }
     
+    async function executeEnemyTurn() {
+        if (isActing) return;
+        isActing = true;
+        addLog("⚔️ 敌人开始行动...", "system", false);
+        const res = await api("enemyTurn", { roomId: currentRoom.id });
+        if (res.success) {
+            // 更新玩家血量
+            if (res.players) {
+                for (let pid in res.players) {
+                    if (pid === currentPlayer.id) {
+                        currentPlayer.hp = res.players[pid].hp;
+                    }
+                }
+                await refreshState();
+            }
+            addLog("敌人攻击结束，轮到玩家回合！", "system", false);
+        }
+        isActing = false;
+        await refreshState();
+    }
+    
     async function takeAction() {
         if (isActing) { addLog("请等待...", "system", true); return; }
-        if (!currentRoom || currentRoom.turn !== currentPlayer.id) { addLog("现在不是你的回合", "system", true); return; }
+        if (!currentRoom || currentRoom.phase !== "player") { addLog("现在是敌人回合，请稍后", "system", true); return; }
+        if (currentRoom.players[currentRoom.currentTurnIndex] !== currentPlayer.id) { addLog("还没轮到你", "system", true); return; }
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) { addLog("请输入行动", "system", true); return; }
         
@@ -522,7 +546,8 @@
                     target = currentRoom.enemies[0];
                 }
             }
-            if (isCombat) {
+            let newEnemies = currentRoom.enemies;
+            if (isCombat && target) {
                 const dice = Math.floor(Math.random() * 20) + 1;
                 const attackRoll = dice + currentPlayer.atkBonus;
                 const isHit = attackRoll >= (target.ac || 11);
@@ -532,12 +557,7 @@
                     target.hp -= damage;
                     if (target.hp < 0) target.hp = 0;
                 }
-                const newEnemies = currentRoom.enemies.filter(e => e.hp > 0);
-                const playerList = currentRoom.players;
-                const currentIdx = playerList.indexOf(currentPlayer.id);
-                const nextIdx = (currentIdx + 1) % playerList.length;
-                const nextTurn = playerList[nextIdx];
-                await api("updateGame", { roomId: currentRoom.id, enemies: newEnemies, turn: nextTurn });
+                newEnemies = currentRoom.enemies.filter(e => e.hp > 0);
                 addLog(`${currentPlayer.name} 掷出 ${dice}，${isHit ? "命中 " + damage + " 伤害" : "未命中"}`, "action", false);
                 const hitResult = isHit ? "命中" : "未命中";
                 const aiDesc = await generateBattleDescription(currentPlayer.name, currentPlayer.class, actionText, hitResult, damage);
@@ -551,14 +571,17 @@
                 const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。请生成一段简短的描述和可能的结果，并建议是否触发战斗或获得物品。`;
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
-                const playerList = currentRoom.players;
-                const currentIdx = playerList.indexOf(currentPlayer.id);
-                const nextIdx = (currentIdx + 1) % playerList.length;
-                const nextTurn = playerList[nextIdx];
-                await api("updateGame", { roomId: currentRoom.id, turn: nextTurn });
             }
-            await refreshState();
-            renderGameUI();
+            // 通知服务器更新敌人并切换到下一个玩家或敌人回合
+            const actionRes = await api("playerAction", { roomId: currentRoom.id, playerId: currentPlayer.id, enemies: newEnemies });
+            if (actionRes.success) {
+                currentRoom = actionRes.room;
+                await refreshState();
+                // 如果所有玩家行动完毕且还有敌人，自动触发敌人回合
+                if (currentRoom.phase === "enemy" && currentRoom.enemies && currentRoom.enemies.length > 0) {
+                    await executeEnemyTurn();
+                }
+            }
             document.getElementById("actionInput").value = "";
         } catch(e) {
             addLog("行动失败: " + e.message, "system", true);
