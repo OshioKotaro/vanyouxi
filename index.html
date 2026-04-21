@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · AI主持版</title>
+    <title>🐉 AI跑团 · AI主持版（调试）</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -141,13 +141,12 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · AI主持版</h1>
+    <h1>🐉 AI跑团 · AI主持版（调试）</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
     </div>
     
-    <!-- 登录界面 -->
     <div id="loginPanel" class="panel">
         <h3>✨ 创建新角色</h3>
         <div class="form-group">
@@ -172,7 +171,6 @@
         </div>
     </div>
     
-    <!-- 房间界面 -->
     <div id="roomPanel" class="panel hidden">
         <div id="roomInfo"></div>
         <div class="player-list" id="roomPlayerList"></div>
@@ -184,7 +182,6 @@
         </div>
     </div>
     
-    <!-- 游戏界面 -->
     <div id="gamePanel" class="panel hidden">
         <div id="turnIndicator" class="turn-indicator">等待开始...</div>
         <div id="sceneDesc" style="font-size: 13px; margin-bottom: 10px;"></div>
@@ -241,16 +238,20 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ action, data })
             });
-            return await res.json();
+            const json = await res.json();
+            console.log(`API ${action} 响应:`, json);
+            return json;
         } catch(e) {
-            console.error("API错误:", e);
+            console.error(`API ${action} 错误:`, e);
             return { success: false, error: e.message };
         }
     }
     
     // AI 生成战斗描述
     async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage) {
+        console.log("调用 generateBattleDescription, 参数:", { playerName, playerClass, actionDesc, hitResult, damage });
         if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
+            console.warn("未配置 Groq API Key，使用简化描述");
             return hitResult === "命中" ? `${playerName} ${actionDesc}，${hitResult}，造成${damage}点伤害！` : `${playerName} ${actionDesc}，${hitResult}！`;
         }
         
@@ -259,10 +260,13 @@
                 playerName, playerClass, actionDesc, hitResult, damage
             });
             if (res.success && res.description) {
+                console.log("AI 返回描述:", res.description);
                 return res.description;
             }
+            console.warn("AI 返回失败，使用简化描述", res);
             return hitResult === "命中" ? `${playerName} ${actionDesc}，${hitResult}，造成${damage}点伤害！` : `${playerName} ${actionDesc}，${hitResult}！`;
         } catch(e) {
+            console.error("AI 调用异常:", e);
             return hitResult === "命中" ? `${playerName} ${actionDesc}，${hitResult}，造成${damage}点伤害！` : `${playerName} ${actionDesc}，${hitResult}！`;
         }
     }
@@ -285,7 +289,6 @@
         }
     };
     
-    // 恢复角色
     document.getElementById("restoreBtn").onclick = async () => {
         const id = document.getElementById("restoreId").value.trim();
         if (!id) { alert("请输入角色ID"); return; }
@@ -302,10 +305,10 @@
         }
     };
     
-    // 刷新状态
     async function refreshState() {
         const res = await fetch(`${WORKER_URL}/state`);
         const data = await res.json();
+        console.log("刷新状态, 房间数据:", data.rooms);
         if (currentPlayer && data.players[currentPlayer.id]) {
             currentPlayer = data.players[currentPlayer.id];
         }
@@ -478,24 +481,20 @@
             const nextIdx = (currentIdx + 1) % playerList.length;
             const nextTurn = playerList[nextIdx];
             
-            // 更新游戏状态
             await api("updateGame", {
                 roomId: currentRoom.id,
                 enemies: newEnemies,
                 turn: nextTurn
             });
             
-            // 添加行动日志
             addLog(`${currentPlayer.name} 掷出 ${dice}，${isHit ? "命中 " + damage + " 伤害" : "未命中"}`, "action", true);
             
-            // 调用 AI 生成描述
             const hitResult = isHit ? "命中" : "未命中";
             const aiDesc = await generateBattleDescription(
                 currentPlayer.name, currentPlayer.class, actionText, hitResult, damage
             );
             addLog(aiDesc, "ai", true);
             
-            // 刷新状态
             await refreshState();
             renderGameUI();
             
@@ -504,7 +503,6 @@
                 gameActive = false;
             }
             
-            // 清空输入框
             document.getElementById("actionInput").value = "";
             
         } catch(e) {
@@ -514,24 +512,17 @@
             isActing = false;
             btn.disabled = false;
             btn.textContent = originalBtnText;
-            // 重新渲染 UI 以确保行动框状态正确
             renderGameUI();
         }
     }
     
-    // 同步循环
     async function syncLoop() {
         try {
             const res = await fetch(`${WORKER_URL}/state`);
             const data = await res.json();
             if (currentPlayer && data.players[currentPlayer.id]) {
-                const oldHp = currentPlayer.hp;
                 currentPlayer = data.players[currentPlayer.id];
                 document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
-                // 如果血量变化，更新显示
-                if (oldHp !== currentPlayer.hp && gameActive) {
-                    renderGameUI();
-                }
             }
             if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
                 const newRoom = data.rooms[currentPlayer.roomId];
@@ -552,7 +543,6 @@
                     }
                 }
             }
-            // 处理新消息
             if (data.messages && data.messages.length) {
                 for (let msg of data.messages) {
                     if (msg.id > lastMessageId) {
@@ -570,7 +560,6 @@
         }
     }
     
-    // 绑定事件
     document.getElementById("joinRoomBtn").onclick = joinRoom;
     document.getElementById("actBtn").onclick = takeAction;
     document.getElementById("actionInput").addEventListener("keypress", (e) => { 
@@ -580,7 +569,6 @@
         }
     });
     
-    // 启动
     syncInterval = setInterval(syncLoop, 1500);
     showPanel("login");
     addLog("🎲 欢迎来到 AI 跑团！AI 主持人将为每场战斗生成独特描述。", "system", true);
