@@ -386,7 +386,7 @@
     };
     
     async function refreshState() {
-        const res = await fetch(`${WORKER_URL}/state`);
+        const res = await fetch(`${WORKER_URL}/state?roomId=${currentPlayer?.roomId || ""}`);
         const data = await res.json();
         if (currentPlayer && data.players[currentPlayer.id]) {
             currentPlayer = data.players[currentPlayer.id];
