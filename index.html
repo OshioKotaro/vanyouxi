@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 完整回合制（玩家→敌人循环）</title>
+    <title>🐉 AI跑团 · 完整回合制（AI敌人行动）</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -486,9 +486,14 @@
         if (!currentRoom) return;
         const myTurn = (currentRoom.phase === "player" && currentRoom.players[currentRoom.currentTurnIndex] === currentPlayer.id);
         const canAct = myTurn && gameActive && !isActing;
-        document.getElementById("turnIndicator").innerHTML = currentRoom.phase === "player" 
-            ? `🎲 玩家回合：${currentRoom.players[currentRoom.currentTurnIndex] === currentPlayer.id ? "轮到你了！" : "等待其他玩家..."}`
-            : "⚔️ 敌人回合...";
+        let turnText = "";
+        if (currentRoom.phase === "player") {
+            const currentPlayerName = currentRoom.players[currentRoom.currentTurnIndex] === currentPlayer.id ? "你" : "其他玩家";
+            turnText = `🎲 玩家回合：${currentPlayerName}行动中...`;
+        } else {
+            turnText = "⚔️ 敌人回合...";
+        }
+        document.getElementById("turnIndicator").innerHTML = turnText;
         document.getElementById("sceneDesc").innerHTML = currentRoom.currentScene || "冒险继续...";
         const enemyDiv = document.getElementById("enemyContainer");
         if (currentRoom.enemies && currentRoom.enemies.length > 0) {
@@ -507,21 +512,34 @@
         if (isActing) return;
         isActing = true;
         addLog("⚔️ 敌人开始行动...", "system", false);
-        const res = await api("enemyTurn", { roomId: currentRoom.id });
-        if (res.success) {
-            // 更新玩家血量
-            if (res.players) {
-                for (let pid in res.players) {
-                    if (pid === currentPlayer.id) {
-                        currentPlayer.hp = res.players[pid].hp;
+        try {
+            const res = await api("enemyTurn", { roomId: currentRoom.id });
+            if (res.success) {
+                // 显示每个敌人的行动描述
+                if (res.actions && res.actions.length) {
+                    for (let act of res.actions) {
+                        addLog(act.description, "ai", false);
+                    }
+                }
+                // 更新玩家血量
+                if (res.players) {
+                    for (let pid in res.players) {
+                        if (pid === currentPlayer.id) {
+                            currentPlayer.hp = res.players[pid].hp;
+                        }
                     }
                 }
                 await refreshState();
+                addLog("敌人行动结束，轮到玩家回合！", "system", false);
+            } else {
+                addLog("敌人回合处理失败: " + (res.error || "未知错误"), "system", false);
             }
-            addLog("敌人攻击结束，轮到玩家回合！", "system", false);
+        } catch (e) {
+            addLog("敌人回合出错: " + e.message, "system", false);
+        } finally {
+            isActing = false;
+            await refreshState();
         }
-        isActing = false;
-        await refreshState();
     }
     
     async function takeAction() {
