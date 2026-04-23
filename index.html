@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 全新开局版</title>
+    <title>🐉 AI跑团 · 最终稳定版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -151,7 +151,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 全新开局版</h1>
+    <h1>🐉 AI跑团 · 最终稳定版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -217,7 +217,7 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    const GROQ_API_KEY = "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";
+    const GROQ_API_KEY = "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";  // 请填入你的 Groq API Key
     
     let currentPlayer = null;
     let currentRoom = null;
@@ -225,7 +225,7 @@
     let gameActive = false;
     let lastMessageId = 0;
     let isActing = false;
-    let displayedMessageIds = new Set();
+    let displayedMessageIds = new Set();  // 存储 clientId
     
     let pendingAttributes = { str: 10, dex: 10, int: 10, con: 10 };
     let pointsLeft = 20;
@@ -314,10 +314,11 @@
         }
     }
     
+    // 获取日志历史（用于AI上下文，但简化使用）
     function getLogHistory() {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return [];
-        const logEntries = Array.from(logDiv.querySelectorAll("p")).slice(-20);
+        const logEntries = Array.from(logDiv.querySelectorAll("p")).slice(-10);
         return logEntries.map(p => {
             const text = p.innerText;
             const isAi = p.querySelector(".ai-text") !== null;
@@ -330,18 +331,23 @@
     }
     
     async function generateNarrative(prompt) {
-        const history = getLogHistory();
+        // 不再传递历史，简化请求
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
-                body: JSON.stringify({ action: "generateNarrative", data: { prompt, history } })
+                body: JSON.stringify({ action: "generateNarrative", data: { prompt, history: [] } })
             });
             const result = await res.json();
-            return result.success ? result.text : prompt;
+            if (result.success && result.text) {
+                return result.text;
+            } else {
+                console.error("AI返回失败:", result);
+                return "你环顾四周，没有发现异常。";
+            }
         } catch(e) {
-            console.error("生成剧情失败", e);
-            return "你环顾四周，没有特别的事情发生。";
+            console.error("generateNarrative异常:", e);
+            return "你环顾四周，没有发现异常。";
         }
     }
     
@@ -426,12 +432,14 @@
                     gameActive = true;
                     showPanel("game");
                     clearLog();
+                    // 生成开场剧情
                     if (!window._openingGenerated) {
                         window._openingGenerated = true;
-                        const intro = await generateNarrative("开始游戏，生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
+                        const intro = await generateNarrative("开始游戏，生成一个简短的黑暗奇幻开场场景，描述你所在的酒馆或野外营地。");
                         addLog(intro, "ai", false);
+                        // 更新服务器场景描述
                         await api("updateGame", { roomId: currentRoom.id, currentScene: intro });
-                        await refreshState();
+                        await refreshState(); // 重新拉取
                     } else if (currentRoom.currentScene) {
                         addLog(currentRoom.currentScene, "ai", true);
                     }
@@ -491,15 +499,7 @@
             window._openingGenerated = false;
             showPanel("game");
             renderGameUI();
-            // 清除本地记录并重新初始化
-            clearLog();
-            displayedMessageIds.clear();
-            lastMessageId = 0;
-            // 生成开场剧情
-            const intro = await generateNarrative("开始游戏，生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
-            addLog(intro, "ai", false);
-            await api("updateGame", { roomId: currentRoom.id, currentScene: intro });
-            await refreshState();
+            await refreshState(); // refreshState 会生成开场
         } else {
             alert("开始失败: " + res.error);
         }
@@ -596,6 +596,7 @@
                     addLog(afterBattle, "ai", false);
                 }
             } else {
+                // 非战斗行动
                 const narrative = await generateNarrative(actionText);
                 addLog(narrative, "ai", false);
                 await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
