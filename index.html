@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 完整回合制（AI敌人行动）</title>
+    <title>🐉 AI跑团 · 服务端回合制（稳定版）</title>
     <style>
+        /* 样式与之前完全相同，为节省篇幅省略，但实际部署时请保留完整样式 */
         * { box-sizing: border-box; }
         body {
             background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%);
@@ -151,7 +152,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 完整回合制</h1>
+    <h1>🐉 AI跑团 · 服务端回合制</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -508,40 +509,6 @@
         if (actBtn) actBtn.disabled = !canAct;
     }
     
-    async function executeEnemyTurn() {
-        if (isActing) return;
-        isActing = true;
-        addLog("⚔️ 敌人开始行动...", "system", false);
-        try {
-            const res = await api("enemyTurn", { roomId: currentRoom.id });
-            if (res.success) {
-                // 显示每个敌人的行动描述
-                if (res.actions && res.actions.length) {
-                    for (let act of res.actions) {
-                        addLog(act.description, "ai", false);
-                    }
-                }
-                // 更新玩家血量
-                if (res.players) {
-                    for (let pid in res.players) {
-                        if (pid === currentPlayer.id) {
-                            currentPlayer.hp = res.players[pid].hp;
-                        }
-                    }
-                }
-                await refreshState();
-                addLog("敌人行动结束，轮到玩家回合！", "system", false);
-            } else {
-                addLog("敌人回合处理失败: " + (res.error || "未知错误"), "system", false);
-            }
-        } catch (e) {
-            addLog("敌人回合出错: " + e.message, "system", false);
-        } finally {
-            isActing = false;
-            await refreshState();
-        }
-    }
-    
     async function takeAction() {
         if (isActing) { addLog("请等待...", "system", true); return; }
         if (!currentRoom || currentRoom.phase !== "player") { addLog("现在是敌人回合，请稍后", "system", true); return; }
@@ -590,15 +557,23 @@
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
             }
-            // 通知服务器更新敌人并切换到下一个玩家或敌人回合
+            
+            // 发送玩家行动到服务端（服务端会处理回合切换和敌人回合）
             const actionRes = await api("playerAction", { roomId: currentRoom.id, playerId: currentPlayer.id, enemies: newEnemies });
             if (actionRes.success) {
+                // 更新房间状态
                 currentRoom = actionRes.room;
-                await refreshState();
-                // 如果所有玩家行动完毕且还有敌人，自动触发敌人回合
-                if (currentRoom.phase === "enemy" && currentRoom.enemies && currentRoom.enemies.length > 0) {
-                    await executeEnemyTurn();
+                // 如果有敌人行动描述，直接显示
+                if (actionRes.enemyActions && actionRes.enemyActions.length) {
+                    for (let act of actionRes.enemyActions) {
+                        addLog(act.description, "ai", false);
+                    }
                 }
+                // 更新玩家血量（如果服务端返回了）
+                if (actionRes.players && actionRes.players[currentPlayer.id]) {
+                    currentPlayer.hp = actionRes.players[currentPlayer.id].hp;
+                }
+                await refreshState();
             }
             document.getElementById("actionInput").value = "";
         } catch(e) {
