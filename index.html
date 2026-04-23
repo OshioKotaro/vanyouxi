@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 剧情推进版</title>
+    <title>🐉 AI跑团 · 去重版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -151,7 +151,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 剧情推进版</h1>
+    <h1>🐉 AI跑团 · 去重版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -225,7 +225,7 @@
     let gameActive = false;
     let lastMessageId = 0;
     let isActing = false;
-    let displayedMessageIds = new Set();
+    let displayedMessageIds = new Set();  // 存储 clientId 用于去重
     
     let pendingAttributes = { str: 10, dex: 10, int: 10, con: 10 };
     let pointsLeft = 20;
@@ -272,11 +272,16 @@
         lastMessageId = 0;
     }
     
-    function addLog(content, type = "system", skipSync = false, messageId = null) {
+    // 生成唯一客户端ID
+    function generateClientId() {
+        return Date.now() + "-" + Math.random().toString(36).substring(2, 8);
+    }
+    
+    function addLog(content, type = "system", skipSync = false, clientId = null) {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return;
-        if (messageId && displayedMessageIds.has(messageId)) return;
-        if (messageId) displayedMessageIds.add(messageId);
+        if (clientId && displayedMessageIds.has(clientId)) return;
+        if (clientId) displayedMessageIds.add(clientId);
         const p = document.createElement("p");
         const cls = type === "ai" ? "ai-text" : (type === "action" ? "action-text" : "system-text");
         p.innerHTML = `<span class="${cls}">${content}</span>`;
@@ -284,7 +289,16 @@
         p.scrollIntoView({ behavior: "smooth", block: "nearest" });
         while (logDiv.children.length > 200) logDiv.removeChild(logDiv.firstChild);
         if (!skipSync && currentPlayer && currentPlayer.roomId) {
-            api("addMessage", { type, playerName: currentPlayer.name, content, roomId: currentPlayer.roomId });
+            const cid = clientId || generateClientId();
+            // 确保本地也记录这个 clientId（如果没有传入）
+            if (!clientId) displayedMessageIds.add(cid);
+            api("addMessage", { 
+                type, 
+                playerName: currentPlayer.name, 
+                content, 
+                roomId: currentPlayer.roomId,
+                clientId: cid
+            });
         }
     }
     
@@ -302,7 +316,6 @@
         }
     }
     
-    // 获取日志历史（用于AI上下文）
     function getLogHistory() {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return [];
@@ -355,6 +368,10 @@
                 const res = await fetch(`${WORKER_URL}/state?roomId=${currentPlayer.roomId}`);
                 const data = await res.json();
                 if (data.messages && data.messages.length) {
+                    // 记录所有已存在的消息 clientId，避免重复显示旧消息
+                    for (let msg of data.messages) {
+                        if (msg.clientId) displayedMessageIds.add(msg.clientId);
+                    }
                     const maxId = Math.max(...data.messages.map(m => m.id), 0);
                     lastMessageId = maxId;
                 }
@@ -412,14 +429,12 @@
                     gameActive = true;
                     showPanel("game");
                     clearLog();
-                    // 生成开场剧情（如果还没有）
                     if (!window._openingGenerated) {
                         window._openingGenerated = true;
                         const intro = await generateNarrative("开始游戏，生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
                         addLog(intro, "ai", false);
-                        // 更新服务器上的 currentScene
                         await api("updateGame", { roomId: currentRoom.id, currentScene: intro });
-                        await refreshState(); // 重新拉取以更新 currentScene
+                        await refreshState();
                     } else if (currentRoom.currentScene) {
                         addLog(currentRoom.currentScene, "ai", true);
                     }
@@ -539,7 +554,8 @@
         if (!actionText) { addLog("请输入行动", "system", true); return; }
         
         // 添加玩家行动陈述（只一次）
-        addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false);
+        const actionClientId = generateClientId();
+        addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false, actionClientId);
         
         isActing = true;
         document.getElementById("actBtn").disabled = true;
@@ -576,10 +592,8 @@
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                // 非战斗行动：调用 AI 生成剧情（带历史上下文）
                 const narrative = await generateNarrative(actionText);
                 addLog(narrative, "ai", false);
-                // 更新场景描述为最新剧情
                 await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
             }
             
@@ -642,7 +656,14 @@
                 for (let msg of data.messages) {
                     if (msg.id > lastMessageId) {
                         lastMessageId = msg.id;
-                        addLog(msg.content, msg.type, true, msg.id);
+                        // 使用 clientId 去重
+                        if (msg.clientId && !displayedMessageIds.has(msg.clientId)) {
+                            addLog(msg.content, msg.type, true, msg.clientId);
+                        } else if (!msg.clientId && !displayedMessageIds.has(msg.id)) {
+                            // 兼容旧消息
+                            addLog(msg.content, msg.type, true, msg.id);
+                            displayedMessageIds.add(msg.id);
+                        }
                     }
                 }
             }
