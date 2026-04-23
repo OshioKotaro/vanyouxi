@@ -512,16 +512,17 @@
         if (isActing) return;
         isActing = true;
         addLog("⚔️ 敌人开始行动...", "system", false);
+        // 禁用操作界面
+        document.getElementById("actBtn").disabled = true;
+        document.getElementById("actionInput").disabled = true;
         try {
             const res = await api("enemyTurn", { roomId: currentRoom.id });
             if (res.success) {
-                // 显示每个敌人的行动描述
                 if (res.actions && res.actions.length) {
                     for (let act of res.actions) {
                         addLog(act.description, "ai", false);
                     }
                 }
-                // 更新玩家血量
                 if (res.players) {
                     for (let pid in res.players) {
                         if (pid === currentPlayer.id) {
@@ -538,7 +539,8 @@
             addLog("敌人回合出错: " + e.message, "system", false);
         } finally {
             isActing = false;
-            await refreshState();
+            // 恢复操作界面（如果轮到当前玩家）
+            renderGameUI();
         }
     }
     
