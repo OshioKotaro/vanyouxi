@@ -479,7 +479,6 @@
             window._openingGenerated = false;
             showPanel("game");
             renderGameUI();
-            // 不再在这里单独添加开场，由 refreshState 中的生成逻辑负责
             await refreshState();
         } else {
             alert("开始失败: " + res.error);
@@ -539,7 +538,9 @@
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) { addLog("请输入行动", "system", true); return; }
         
-        // 不再单独广播玩家行动（避免冗余），因为 AI 回复会自然包含
+        // 添加玩家行动陈述（只一次）
+        addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false);
+        
         isActing = true;
         document.getElementById("actBtn").disabled = true;
         document.getElementById("actionInput").disabled = true;
