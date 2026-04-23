@@ -412,9 +412,16 @@
                     gameActive = true;
                     showPanel("game");
                     clearLog();
-                    if (currentRoom.currentScene && !window._sceneShown) {
+                    // 生成开场剧情（如果还没有）
+                    if (!window._openingGenerated) {
+                        window._openingGenerated = true;
+                        const intro = await generateNarrative("开始游戏，生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
+                        addLog(intro, "ai", false);
+                        // 更新服务器上的 currentScene
+                        await api("updateGame", { roomId: currentRoom.id, currentScene: intro });
+                        await refreshState(); // 重新拉取以更新 currentScene
+                    } else if (currentRoom.currentScene) {
                         addLog(currentRoom.currentScene, "ai", true);
-                        window._sceneShown = true;
                     }
                 }
                 renderGameUI();
@@ -469,12 +476,11 @@
         if (res.success) {
             currentRoom = res.room;
             gameActive = true;
-            window._sceneShown = false;
+            window._openingGenerated = false;
             showPanel("game");
             renderGameUI();
-            const intro = await generateNarrative("开始游戏，生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
-            addLog(intro, "ai", false);
-            addLog("你可以进行：探索、对话或攻击（如果有敌人）。", "system", false);
+            // 不再在这里单独添加开场，由 refreshState 中的生成逻辑负责
+            await refreshState();
         } else {
             alert("开始失败: " + res.error);
         }
@@ -533,8 +539,7 @@
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) { addLog("请输入行动", "system", true); return; }
         
-        addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false);
-        
+        // 不再单独广播玩家行动（避免冗余），因为 AI 回复会自然包含
         isActing = true;
         document.getElementById("actBtn").disabled = true;
         document.getElementById("actionInput").disabled = true;
@@ -573,6 +578,8 @@
                 // 非战斗行动：调用 AI 生成剧情（带历史上下文）
                 const narrative = await generateNarrative(actionText);
                 addLog(narrative, "ai", false);
+                // 更新场景描述为最新剧情
+                await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
             }
             
             const actionRes = await api("playerAction", { roomId: currentRoom.id, playerId: currentPlayer.id, enemies: newEnemies });
