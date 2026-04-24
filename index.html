@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 最终稳定版</title>
+    <title>🐉 AI跑团 · 稳定剧情版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -151,7 +151,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 最终稳定版</h1>
+    <h1>🐉 AI跑团 · 稳定剧情版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -217,7 +217,7 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    // 前端不再存储 GROQ_API_KEY
+    // 不再需要前端的 API Key，全部由 Worker 环境变量处理
     
     let currentPlayer = null;
     let currentRoom = null;
@@ -314,6 +314,7 @@
         }
     }
     
+    // 获取日志历史
     function getLogHistory() {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return [];
@@ -338,29 +339,12 @@
                 body: JSON.stringify({ action: "generateNarrative", data: { prompt, history } })
             });
             const result = await res.json();
-            if (result.success && result.text) {
-                return result.text;
-            } else {
-                console.warn("AI返回失败", result);
-                return "你继续前进，周围环境似乎有些变化。";
-            }
+            if (result.success) return result.text;
+            console.warn("AI返回失败:", result);
+            return "你环顾四周，没有发现异常。";
         } catch(e) {
-            console.error("生成剧情失败", e);
-            return "你继续前进，周围环境似乎有些变化。";
-        }
-    }
-    
-    async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage) {
-        try {
-            const res = await fetch(`${WORKER_URL}/action`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "generateBattleDesc", data: { playerName, playerClass, actionDesc, hitResult, damage } })
-            });
-            const result = await res.json();
-            return result.description || `${playerName}的攻击！`;
-        } catch(e) {
-            return `${playerName}的攻击！`;
+            console.error("生成剧情失败:", e);
+            return "你环顾四周，没有发现异常。";
         }
     }
     
@@ -431,11 +415,8 @@
                     gameActive = true;
                     showPanel("game");
                     clearLog();
-                    // 直接从服务器获取开场场景
                     if (currentRoom.currentScene) {
                         addLog(currentRoom.currentScene, "ai", true);
-                    } else {
-                        addLog("冒险开始！", "ai", true);
                     }
                 }
                 renderGameUI();
@@ -492,7 +473,10 @@
             gameActive = true;
             showPanel("game");
             renderGameUI();
-            await refreshState(); // 刷新后会自动显示开场场景（从 currentRoom.currentScene 获取）
+            if (currentRoom.currentScene) {
+                addLog(currentRoom.currentScene, "ai", false);
+            }
+            await refreshState();
         } else {
             alert("开始失败: " + res.error);
         }
@@ -524,8 +508,7 @@
         const canAct = myTurn && gameActive && !isActing;
         let turnText = "";
         if (currentRoom.phase === "player") {
-            const currentPlayerName = currentRoom.players[currentRoom.currentTurnIndex] === currentPlayer.id ? "你" : "其他玩家";
-            turnText = `🎲 玩家回合：${currentPlayerName}行动中...`;
+            turnText = myTurn ? "🎲 轮到你了！" : "⏳ 等待其他玩家行动...";
         } else {
             turnText = "⚔️ 敌人回合...";
         }
@@ -535,9 +518,9 @@
         if (currentRoom.enemies && currentRoom.enemies.length > 0) {
             enemyDiv.innerHTML = currentRoom.enemies.map(e => `<div class="enemy-card"><span>👾 ${e.name}</span><span>❤️ ${e.hp}/${e.maxHp}</span></div>`).join("");
         } else {
-            enemyDiv.innerHTML = "<div>⚔️ 当前没有敌人，你可以探索或对话。</div>";
+            enemyDiv.innerHTML = "";
         }
-        document.getElementById("playerStats").innerHTML = `<strong>${currentPlayer.name}</strong> (${currentPlayer.class}) | ❤️ ${currentPlayer.hp}/${currentPlayer.maxHp} | 💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp} | 💪力量${currentPlayer.attributes.str} 🏹敏捷${currentPlayer.attributes.dex} 🧠智力${currentPlayer.attributes.int} ❤️体质${currentPlayer.attributes.con}`;
+        document.getElementById("playerStats").innerHTML = `<strong>${currentPlayer.name}</strong> (${currentPlayer.class}) | ❤️ ${currentPlayer.hp}/${currentPlayer.maxHp} | 💙 MP ${currentPlayer.mp}/${currentPlayer.maxMp} | 💪${currentPlayer.attributes.str} 🏹${currentPlayer.attributes.dex} 🧠${currentPlayer.attributes.int} ❤️${currentPlayer.attributes.con}`;
         const actionInput = document.getElementById("actionInput");
         const actBtn = document.getElementById("actBtn");
         if (actionInput) actionInput.disabled = !canAct;
@@ -551,6 +534,7 @@
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) { addLog("请输入行动", "system", true); return; }
         
+        // 添加玩家行动陈述
         const actionClientId = generateClientId();
         addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false, actionClientId);
         
@@ -558,17 +542,20 @@
         document.getElementById("actBtn").disabled = true;
         document.getElementById("actionInput").disabled = true;
         try {
-            const lower = actionText.toLowerCase();
+            // 检查是否是战斗（如果存在敌人）
             let isCombat = false;
             let target = null;
             if (currentRoom.enemies && currentRoom.enemies.length > 0) {
+                const lower = actionText.toLowerCase();
                 if (lower.includes("攻击") || lower.includes("砍") || lower.includes("打") || lower.includes("射")) {
                     isCombat = true;
                     target = currentRoom.enemies[0];
                 }
             }
+            
             let newEnemies = currentRoom.enemies;
             if (isCombat && target) {
+                // 战斗逻辑
                 const dice = Math.floor(Math.random() * 20) + 1;
                 const attackRoll = dice + currentPlayer.atkBonus;
                 const isHit = attackRoll >= (target.ac || 11);
@@ -585,17 +572,15 @@
                 addLog(aiDesc, "ai", false);
                 if (newEnemies.length === 0) {
                     addLog("🏆 战斗胜利！", "ai", false);
-                    // 战斗胜利后生成一段剧情
-                    const afterBattle = await generateNarrative("战斗胜利后，周围发生了什么变化？");
-                    addLog(afterBattle, "ai", false);
                 }
             } else {
+                // 非战斗：调用 AI 生成剧情
                 const narrative = await generateNarrative(actionText);
                 addLog(narrative, "ai", false);
-                // 更新场景描述
-                await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
+                // 可选：根据剧情内容决定是否添加敌人等（暂不自动添加）
             }
             
+            // 发送行动结果到服务器（更新敌人、切换回合）
             const actionRes = await api("playerAction", { roomId: currentRoom.id, playerId: currentPlayer.id, enemies: newEnemies });
             if (actionRes.success) {
                 currentRoom = actionRes.room;
@@ -618,6 +603,15 @@
         }
     }
     
+    async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage) {
+        // 简化战斗描述，不用AI调用，直接返回
+        if (hitResult === "命中") {
+            return `${playerName} 的攻击狠狠击中敌人，造成 ${damage} 点伤害！`;
+        } else {
+            return `${playerName} 的攻击被敌人闪避。`;
+        }
+    }
+    
     async function syncLoop() {
         try {
             if (!currentPlayer) return;
@@ -635,12 +629,7 @@
                     if (currentRoom.status === "playing" && !gameActive) {
                         gameActive = true;
                         showPanel("game");
-                        clearLog();
-                        if (currentRoom.currentScene) {
-                            addLog(currentRoom.currentScene, "ai", true);
-                        } else {
-                            addLog("冒险开始！", "ai", true);
-                        }
+                        renderGameUI();
                     } else if (currentRoom.status === "waiting") {
                         renderRoomUI();
                     }
@@ -679,7 +668,6 @@
     syncInterval = setInterval(syncLoop, 1000);
     showPanel("login");
     addLog("🎲 欢迎来到 AI 跑团！创建角色并分配属性点。", "system", true);
-    // 不再检查前端 Groq Key，因为全部移到 Worker 环境变量
 </script>
 </body>
 </html>
