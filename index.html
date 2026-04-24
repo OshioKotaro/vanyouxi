@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 剧情推进版</title>
+    <title>🐉 AI跑团 · 服务端回合制（稳定版）</title>
     <style>
+        /* 样式与之前完全相同，为节省篇幅省略，但实际部署时请保留完整样式 */
         * { box-sizing: border-box; }
         body {
             background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%);
@@ -151,7 +152,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 剧情推进版</h1>
+    <h1>🐉 AI跑团 · 服务端回合制</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -302,34 +303,16 @@
         }
     }
     
-    // 获取日志历史（用于AI上下文）
-    function getLogHistory() {
-        const logDiv = document.getElementById("combatLog");
-        if (!logDiv) return [];
-        const logEntries = Array.from(logDiv.querySelectorAll("p")).slice(-20);
-        return logEntries.map(p => {
-            const text = p.innerText;
-            const isAi = p.querySelector(".ai-text") !== null;
-            const isAction = p.querySelector(".action-text") !== null;
-            let type = "system";
-            if (isAi) type = "ai";
-            else if (isAction) type = "action";
-            return { type, playerName: null, content: text };
-        });
-    }
-    
     async function generateNarrative(prompt) {
-        const history = getLogHistory();
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
-                body: JSON.stringify({ action: "generateNarrative", data: { prompt, history } })
+                body: JSON.stringify({ action: "generateNarrative", data: { prompt } })
             });
             const result = await res.json();
             return result.success ? result.text : prompt;
         } catch(e) {
-            console.error("生成剧情失败", e);
             return "你环顾四周，没有特别的事情发生。";
         }
     }
@@ -412,16 +395,9 @@
                     gameActive = true;
                     showPanel("game");
                     clearLog();
-                    // 生成开场剧情（如果还没有）
-                    if (!window._openingGenerated) {
-                        window._openingGenerated = true;
-                        const intro = await generateNarrative("开始游戏，生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
-                        addLog(intro, "ai", false);
-                        // 更新服务器上的 currentScene
-                        await api("updateGame", { roomId: currentRoom.id, currentScene: intro });
-                        await refreshState(); // 重新拉取以更新 currentScene
-                    } else if (currentRoom.currentScene) {
+                    if (currentRoom.currentScene && !window._sceneShown) {
                         addLog(currentRoom.currentScene, "ai", true);
+                        window._sceneShown = true;
                     }
                 }
                 renderGameUI();
@@ -476,10 +452,12 @@
         if (res.success) {
             currentRoom = res.room;
             gameActive = true;
-            window._openingGenerated = false;
+            window._sceneShown = false;
             showPanel("game");
             renderGameUI();
-            await refreshState();
+            const intro = await generateNarrative("为冒险队伍生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
+            addLog(intro, "ai", false);
+            addLog("你可以进行：探索、对话或攻击（如果有敌人）。", "system", false);
         } else {
             alert("开始失败: " + res.error);
         }
@@ -538,7 +516,6 @@
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) { addLog("请输入行动", "system", true); return; }
         
-        // 添加玩家行动陈述（只一次）
         addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false);
         
         isActing = true;
@@ -576,21 +553,23 @@
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                // 非战斗行动：调用 AI 生成剧情（带历史上下文）
-                const narrative = await generateNarrative(actionText);
+                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。请生成一段简短的描述和可能的结果，并建议是否触发战斗或获得物品。`;
+                const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
-                // 更新场景描述为最新剧情
-                await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
             }
             
+            // 发送玩家行动到服务端（服务端会处理回合切换和敌人回合）
             const actionRes = await api("playerAction", { roomId: currentRoom.id, playerId: currentPlayer.id, enemies: newEnemies });
             if (actionRes.success) {
+                // 更新房间状态
                 currentRoom = actionRes.room;
+                // 如果有敌人行动描述，直接显示
                 if (actionRes.enemyActions && actionRes.enemyActions.length) {
                     for (let act of actionRes.enemyActions) {
                         addLog(act.description, "ai", false);
                     }
                 }
+                // 更新玩家血量（如果服务端返回了）
                 if (actionRes.players && actionRes.players[currentPlayer.id]) {
                     currentPlayer.hp = actionRes.players[currentPlayer.id].hp;
                 }
