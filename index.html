@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 剧情推进版</title>
+    <title>🐉 AI跑团 · 最终稳定版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -151,7 +151,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 剧情推进版</h1>
+    <h1>🐉 AI跑团 · 最终稳定版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -217,7 +217,7 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    const GROQ_API_KEY = "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";  // 请填入你的 Groq API Key
+    // 前端不再存储 GROQ_API_KEY
     
     let currentPlayer = null;
     let currentRoom = null;
@@ -272,11 +272,15 @@
         lastMessageId = 0;
     }
     
-    function addLog(content, type = "system", skipSync = false, messageId = null) {
+    function generateClientId() {
+        return Date.now() + "-" + Math.random().toString(36).substring(2, 8);
+    }
+    
+    function addLog(content, type = "system", skipSync = false, clientId = null) {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return;
-        if (messageId && displayedMessageIds.has(messageId)) return;
-        if (messageId) displayedMessageIds.add(messageId);
+        if (clientId && displayedMessageIds.has(clientId)) return;
+        if (clientId) displayedMessageIds.add(clientId);
         const p = document.createElement("p");
         const cls = type === "ai" ? "ai-text" : (type === "action" ? "action-text" : "system-text");
         p.innerHTML = `<span class="${cls}">${content}</span>`;
@@ -284,7 +288,15 @@
         p.scrollIntoView({ behavior: "smooth", block: "nearest" });
         while (logDiv.children.length > 200) logDiv.removeChild(logDiv.firstChild);
         if (!skipSync && currentPlayer && currentPlayer.roomId) {
-            api("addMessage", { type, playerName: currentPlayer.name, content, roomId: currentPlayer.roomId });
+            const cid = clientId || generateClientId();
+            if (!clientId) displayedMessageIds.add(cid);
+            api("addMessage", { 
+                type, 
+                playerName: currentPlayer.name, 
+                content, 
+                roomId: currentPlayer.roomId,
+                clientId: cid
+            });
         }
     }
     
@@ -302,7 +314,6 @@
         }
     }
     
-    // 获取日志历史（用于AI上下文）
     function getLogHistory() {
         const logDiv = document.getElementById("combatLog");
         if (!logDiv) return [];
@@ -323,14 +334,19 @@
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ action: "generateNarrative", data: { prompt, history } })
             });
             const result = await res.json();
-            return result.success ? result.text : prompt;
+            if (result.success && result.text) {
+                return result.text;
+            } else {
+                console.warn("AI返回失败", result);
+                return "你继续前进，周围环境似乎有些变化。";
+            }
         } catch(e) {
             console.error("生成剧情失败", e);
-            return "你环顾四周，没有特别的事情发生。";
+            return "你继续前进，周围环境似乎有些变化。";
         }
     }
     
@@ -338,7 +354,7 @@
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ action: "generateBattleDesc", data: { playerName, playerClass, actionDesc, hitResult, damage } })
             });
             const result = await res.json();
@@ -355,6 +371,9 @@
                 const res = await fetch(`${WORKER_URL}/state?roomId=${currentPlayer.roomId}`);
                 const data = await res.json();
                 if (data.messages && data.messages.length) {
+                    for (let msg of data.messages) {
+                        if (msg.clientId) displayedMessageIds.add(msg.clientId);
+                    }
                     const maxId = Math.max(...data.messages.map(m => m.id), 0);
                     lastMessageId = maxId;
                 }
@@ -412,16 +431,11 @@
                     gameActive = true;
                     showPanel("game");
                     clearLog();
-                    // 生成开场剧情（如果还没有）
-                    if (!window._openingGenerated) {
-                        window._openingGenerated = true;
-                        const intro = await generateNarrative("开始游戏，生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
-                        addLog(intro, "ai", false);
-                        // 更新服务器上的 currentScene
-                        await api("updateGame", { roomId: currentRoom.id, currentScene: intro });
-                        await refreshState(); // 重新拉取以更新 currentScene
-                    } else if (currentRoom.currentScene) {
+                    // 直接从服务器获取开场场景
+                    if (currentRoom.currentScene) {
                         addLog(currentRoom.currentScene, "ai", true);
+                    } else {
+                        addLog("冒险开始！", "ai", true);
                     }
                 }
                 renderGameUI();
@@ -476,10 +490,9 @@
         if (res.success) {
             currentRoom = res.room;
             gameActive = true;
-            window._openingGenerated = false;
             showPanel("game");
             renderGameUI();
-            await refreshState();
+            await refreshState(); // 刷新后会自动显示开场场景（从 currentRoom.currentScene 获取）
         } else {
             alert("开始失败: " + res.error);
         }
@@ -538,8 +551,8 @@
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) { addLog("请输入行动", "system", true); return; }
         
-        // 添加玩家行动陈述（只一次）
-        addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false);
+        const actionClientId = generateClientId();
+        addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false, actionClientId);
         
         isActing = true;
         document.getElementById("actBtn").disabled = true;
@@ -572,14 +585,14 @@
                 addLog(aiDesc, "ai", false);
                 if (newEnemies.length === 0) {
                     addLog("🏆 战斗胜利！", "ai", false);
-                    const afterBattle = await generateNarrative("战斗结束后，描述场景的变化或新的发现。");
+                    // 战斗胜利后生成一段剧情
+                    const afterBattle = await generateNarrative("战斗胜利后，周围发生了什么变化？");
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                // 非战斗行动：调用 AI 生成剧情（带历史上下文）
                 const narrative = await generateNarrative(actionText);
                 addLog(narrative, "ai", false);
-                // 更新场景描述为最新剧情
+                // 更新场景描述
                 await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
             }
             
@@ -623,9 +636,10 @@
                         gameActive = true;
                         showPanel("game");
                         clearLog();
-                        if (currentRoom.currentScene && !window._sceneShown) {
+                        if (currentRoom.currentScene) {
                             addLog(currentRoom.currentScene, "ai", true);
-                            window._sceneShown = true;
+                        } else {
+                            addLog("冒险开始！", "ai", true);
                         }
                     } else if (currentRoom.status === "waiting") {
                         renderRoomUI();
@@ -642,7 +656,12 @@
                 for (let msg of data.messages) {
                     if (msg.id > lastMessageId) {
                         lastMessageId = msg.id;
-                        addLog(msg.content, msg.type, true, msg.id);
+                        if (msg.clientId && !displayedMessageIds.has(msg.clientId)) {
+                            addLog(msg.content, msg.type, true, msg.clientId);
+                        } else if (!msg.clientId && !displayedMessageIds.has(msg.id)) {
+                            addLog(msg.content, msg.type, true, msg.id);
+                            displayedMessageIds.add(msg.id);
+                        }
                     }
                 }
             }
@@ -660,11 +679,7 @@
     syncInterval = setInterval(syncLoop, 1000);
     showPanel("login");
     addLog("🎲 欢迎来到 AI 跑团！创建角色并分配属性点。", "system", true);
-    if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
-        addLog("⚠️ 未配置 Groq API Key，AI 描述将使用简化模式。请在代码中填入你的 Key。", "system", true);
-    } else {
-        addLog("✅ Groq API Key 已配置，AI 主持人已就绪！", "system", true);
-    }
+    // 不再检查前端 Groq Key，因为全部移到 Worker 环境变量
 </script>
 </body>
 </html>
