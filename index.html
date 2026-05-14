@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>🐉 AI跑团 · 稳定回归版</title>
     <style>
-        /* 样式与您提供的完全相同，此处省略以节省空间，请复制您现有的 style 部分 */
         * { box-sizing: border-box; }
         body {
             background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%);
@@ -85,9 +84,16 @@
             padding: 6px 12px;
             border-radius: 40px;
             font-size: 12px;
+            transition: all 0.2s;
         }
-        .player-card.ready { background: #4a6b3c; border: 1px solid #8bc34a; }
-        .player-card.host { border: 1px solid gold; }
+        .player-card.ready {
+            background: #4a6b3c;
+            border: 1px solid #8bc34a;
+            box-shadow: 0 0 4px #8bc34a;
+        }
+        .player-card.host {
+            border: 1px solid gold;
+        }
         .enemy-card {
             background: #2a221ab3;
             margin: 8px 0;
@@ -444,14 +450,16 @@
     async function joinRoom() {
         const code = document.getElementById("joinRoomCode").value.trim().toUpperCase();
         if (!code) return;
+        console.log("尝试加入房间:", code);
         const res = await api("joinRoom", { roomId: code, playerId: currentPlayer.id });
+        console.log("加入房间响应:", res);
         if (res.success) {
             currentRoom = res.room;
             currentPlayer.roomId = currentRoom.id;
             await resetRoomState();
             await refreshState();
         } else {
-            alert("加入失败: " + res.error);
+            alert("加入失败: " + (res.error || "请检查房间码是否正确"));
         }
     }
     
@@ -460,7 +468,10 @@
         const res = await api("playerReady", { playerId: currentPlayer.id, isReady: newReady });
         if (res.success) {
             currentPlayer.isReady = newReady;
-            await refreshState();
+            // 强制刷新房间 UI 以更新准备状态显示
+            if (currentRoom) {
+                await refreshState();
+            }
         }
     }
     
@@ -482,18 +493,27 @@
         if (!currentRoom) return;
         const isHost = currentRoom.hostId === currentPlayer.id;
         document.getElementById("roomInfo").innerHTML = `<div class="room-code">🏠 房间码: ${currentRoom.id}</div><div>状态: 等待中</div>`;
-        fetch(`${WORKER_URL}/state`).then(r=>r.json()).then(data=>{
+        // 从服务器获取最新玩家数据
+        fetch(`${WORKER_URL}/state`).then(r => r.json()).then(data => {
             const playersData = data.players;
             let html = "";
             for (let pid of currentRoom.players) {
                 const p = playersData[pid];
                 if (p) {
-                    html += `<div class="player-card ${p.isReady ? 'ready' : ''} ${pid === currentRoom.hostId ? 'host' : ''}">${p.name} (${p.class}) ${p.isReady ? '✓' : '○'}</div>`;
+                    const readyClass = p.isReady ? 'ready' : '';
+                    const hostClass = pid === currentRoom.hostId ? 'host' : '';
+                    html += `<div class="player-card ${readyClass} ${hostClass}">
+                        ${p.name} (${p.class}) ${p.isReady ? '✓' : '○'}
+                    </div>`;
                 }
             }
             document.getElementById("roomPlayerList").innerHTML = html || "<div>等待玩家...</div>";
-        });
-        document.getElementById("roomActions").innerHTML = `<button id="readyBtn" style="margin-bottom: 8px;">${currentPlayer.isReady ? '取消准备' : '准备就绪'}</button>${isHost ? `<button id="startGameBtn">开始游戏</button>` : '<div class="info-text">等待房主开始...</div>'}`;
+        }).catch(err => console.error("获取玩家列表失败:", err));
+        
+        document.getElementById("roomActions").innerHTML = `
+            <button id="readyBtn" style="margin-bottom: 8px;">${currentPlayer.isReady ? '取消准备' : '准备就绪'}</button>
+            ${isHost ? `<button id="startGameBtn">开始游戏</button>` : '<div class="info-text">等待房主开始...</div>'}
+        `;
         document.getElementById("readyBtn")?.addEventListener("click", setReady);
         document.getElementById("startGameBtn")?.addEventListener("click", startGame);
     }
