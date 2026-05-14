@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 完整剧情版（房间加入修复）</title>
+    <title>🐉 AI跑团 · 完整剧情版</title>
     <style>
-        /* 样式与您提供的相同，此处省略以节省篇幅，实际使用时保留完整样式 */
+        /* 样式与您提供的相同，此处保持原样 */
         * { box-sizing: border-box; }
         body { background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%); font-family: -apple-system, monospace; color: #e8e2d4; padding: 12px; margin: 0; }
         .container { max-width: 700px; margin: 0 auto; background: rgba(0,0,0,0.6); border-radius: 24px; padding: 16px; border: 1px solid #c4a46e; }
@@ -137,7 +137,11 @@
         document.getElementById("intVal").innerText = pendingAttributes.int;
         document.getElementById("conVal").innerText = pendingAttributes.con;
         document.getElementById("pointsLeft").innerText = pointsLeft;
-        document.querySelectorAll("[data-delta='1']").forEach(btn => btn.disabled = pointsLeft === 0);
+        // 启用/禁用加减按钮
+        document.querySelectorAll("[data-delta='1']").forEach(btn => {
+            const attr = btn.getAttribute("data-attr");
+            btn.disabled = pointsLeft === 0;
+        });
         document.querySelectorAll("[data-delta='-1']").forEach(btn => {
             const attr = btn.getAttribute("data-attr");
             btn.disabled = pendingAttributes[attr] === 10;
@@ -447,6 +451,7 @@
                 const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。请生成一段简短的描述和可能的结果，并建议是否触发战斗或获得物品。`;
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
+                // 简单处理：如果 AI 描述中提到敌人，可以添加敌人（可选，暂不实现复杂逻辑）
                 // 回合切换
                 const playerList = currentRoom.players;
                 const currentIdx = playerList.indexOf(currentPlayer.id);
@@ -475,8 +480,7 @@
             }
             if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
                 const newRoom = data.rooms[currentPlayer.roomId];
-                // ✅ 关键修复：即使房间对象没有变化，也强制刷新 UI（尤其是加入房间后）
-                if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom) || !currentRoom) {
+                if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
                     currentRoom = newRoom;
                     if (currentRoom.status === "playing" && !gameActive) {
                         gameActive = true;
@@ -491,21 +495,8 @@
                     } else if (gameActive) {
                         renderGameUI();
                     }
-                } else if (currentRoom.status === "waiting") {
-                    // 即使房间没变，也定期刷新大厅（例如准备状态变化）
-                    renderRoomUI();
                 }
-            } else {
-                // 不在任何房间
-                currentRoom = null;
-                gameActive = false;
-                showPanel("room");
-                document.getElementById("roomInfo").innerHTML = "<div>暂无房间</div>";
-                document.getElementById("roomPlayerList").innerHTML = "";
-                document.getElementById("roomActions").innerHTML = `<button id="createRoomBtn">➕ 创建新房间</button>`;
-                document.getElementById("createRoomBtn")?.addEventListener("click", createRoom);
             }
-            // 同步消息
             if (data.messages && data.messages.length) {
                 for (let msg of data.messages) {
                     if (msg.id > lastMessageId) {
