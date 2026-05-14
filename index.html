@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 稳定回归版</title>
+    <title>🐉 AI跑团 · 最终修复版</title>
     <style>
-        /* 样式与您提供的完全相同，此处省略以节省空间，请复制您现有的 style 部分 */
         * { box-sizing: border-box; }
         body {
             background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%);
@@ -85,6 +84,7 @@
             padding: 6px 12px;
             border-radius: 40px;
             font-size: 12px;
+            transition: 0.1s;
         }
         .player-card.ready { background: #4a6b3c; border: 1px solid #8bc34a; }
         .player-card.host { border: 1px solid gold; }
@@ -152,7 +152,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 稳定回归版</h1>
+    <h1>🐉 AI跑团 · 最终修复版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -428,16 +428,14 @@
     }
     
     async function createRoom() {
-        console.log("createRoom 被调用");
         const res = await api("createRoom", { roomName: `${currentPlayer.name}的房间`, playerId: currentPlayer.id });
-        console.log("createRoom 响应:", res);
         if (res.success) {
             currentRoom = res.room;
             currentPlayer.roomId = currentRoom.id;
             await resetRoomState();
             await refreshState();
         } else {
-            alert("创建失败: " + (res.error || "未知错误。请检查网络或刷新后重试。"));
+            alert("创建失败: " + (res.error || "未知错误"));
         }
     }
     
@@ -451,7 +449,7 @@
             await resetRoomState();
             await refreshState();
         } else {
-            alert("加入失败: " + res.error);
+            alert("加入失败: " + (res.error || "请检查房间码是否正确"));
         }
     }
     
@@ -488,7 +486,9 @@
             for (let pid of currentRoom.players) {
                 const p = playersData[pid];
                 if (p) {
-                    html += `<div class="player-card ${p.isReady ? 'ready' : ''} ${pid === currentRoom.hostId ? 'host' : ''}">${p.name} (${p.class}) ${p.isReady ? '✓' : '○'}</div>`;
+                    html += `<div class="player-card ${p.isReady ? 'ready' : ''} ${pid === currentRoom.hostId ? 'host' : ''}">
+                        ${p.name} (${p.class}) ${p.isReady ? '✓' : '○'}
+                    </div>`;
                 }
             }
             document.getElementById("roomPlayerList").innerHTML = html || "<div>等待玩家...</div>";
@@ -585,39 +585,59 @@
         }
     }
     
+    // ============================================================
+    // ✅ 修复后的 syncLoop（GPT 建议）
+    // ============================================================
     async function syncLoop() {
         try {
             if (!currentPlayer) return;
             const url = `${WORKER_URL}/state${currentPlayer.roomId ? `?roomId=${currentPlayer.roomId}` : ""}`;
             const res = await fetch(url);
             const data = await res.json();
-            if (currentPlayer && data.players[currentPlayer.id]) {
+            
+            // 更新当前玩家数据
+            if (data.players && data.players[currentPlayer.id]) {
                 currentPlayer = data.players[currentPlayer.id];
                 document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
             }
-            if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
+            
+            // 如果玩家在房间中
+            if (currentPlayer.roomId && data.rooms && data.rooms[currentPlayer.roomId]) {
                 const newRoom = data.rooms[currentPlayer.roomId];
-                if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
-                    currentRoom = newRoom;
-                    if (currentRoom.status === "playing" && !gameActive) {
+                currentRoom = newRoom;   // 无论是否变化都更新
+                
+                // 等待大厅
+                if (currentRoom.status === "waiting") {
+                    gameActive = false;
+                    showPanel("room");
+                    renderRoomUI();   // 每次轮询都重新渲染大厅，确保准备状态绿点显示
+                }
+                // 游戏中
+                else if (currentRoom.status === "playing") {
+                    if (!gameActive) {
                         gameActive = true;
                         showPanel("game");
                         clearLog();
-                        if (currentRoom.currentScene && !window._sceneShown) {
+                        if (currentRoom.currentScene) {
                             addLog(currentRoom.currentScene, "ai", true);
                             window._sceneShown = true;
                         }
-                    } else if (currentRoom.status === "waiting") {
-                        renderRoomUI();
                     }
-                } else if (currentRoom.status === "playing" && !gameActive) {
-                    gameActive = true;
-                    showPanel("game");
-                    renderGameUI();
-                } else if (gameActive) {
-                    renderGameUI();
+                    renderGameUI();   // 每次轮询刷新游戏界面
                 }
             }
+            // 不在任何房间
+            else {
+                currentRoom = null;
+                gameActive = false;
+                showPanel("room");
+                document.getElementById("roomInfo").innerHTML = "<div>暂无房间</div>";
+                document.getElementById("roomPlayerList").innerHTML = "";
+                document.getElementById("roomActions").innerHTML = `<button id="createRoomBtn">➕ 创建新房间</button>`;
+                document.getElementById("createRoomBtn")?.addEventListener("click", createRoom);
+            }
+            
+            // 同步消息（去重）
             if (data.messages && data.messages.length) {
                 for (let msg of data.messages) {
                     if (msg.id > lastMessageId) {
@@ -632,7 +652,7 @@
                 }
             }
             document.getElementById("syncStatus").innerHTML = "🟢 已连接";
-        } catch(e) {
+        } catch (e) {
             console.error(e);
             document.getElementById("syncStatus").innerHTML = "🔴 离线";
         }
