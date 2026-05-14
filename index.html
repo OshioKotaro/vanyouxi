@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 最终可靠版</title>
+    <title>🐉 AI跑团 · 稳定回归版</title>
     <style>
+        /* 样式与您提供的完全相同，此处省略以节省空间，请复制您现有的 style 部分 */
         * { box-sizing: border-box; }
         body {
             background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%);
@@ -84,7 +85,6 @@
             padding: 6px 12px;
             border-radius: 40px;
             font-size: 12px;
-            transition: 0.1s;
         }
         .player-card.ready { background: #4a6b3c; border: 1px solid #8bc34a; }
         .player-card.host { border: 1px solid gold; }
@@ -152,7 +152,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 最终可靠版</h1>
+    <h1>🐉 AI跑团 · 稳定回归版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -428,14 +428,16 @@
     }
     
     async function createRoom() {
+        console.log("createRoom 被调用");
         const res = await api("createRoom", { roomName: `${currentPlayer.name}的房间`, playerId: currentPlayer.id });
+        console.log("createRoom 响应:", res);
         if (res.success) {
             currentRoom = res.room;
             currentPlayer.roomId = currentRoom.id;
             await resetRoomState();
             await refreshState();
         } else {
-            alert("创建失败: " + (res.error || "未知错误"));
+            alert("创建失败: " + (res.error || "未知错误。请检查网络或刷新后重试。"));
         }
     }
     
@@ -449,7 +451,7 @@
             await resetRoomState();
             await refreshState();
         } else {
-            alert("加入失败: " + (res.error || "请检查房间码是否正确"));
+            alert("加入失败: " + res.error);
         }
     }
     
@@ -480,16 +482,13 @@
         if (!currentRoom) return;
         const isHost = currentRoom.hostId === currentPlayer.id;
         document.getElementById("roomInfo").innerHTML = `<div class="room-code">🏠 房间码: ${currentRoom.id}</div><div>状态: 等待中</div>`;
-        // 获取最新玩家列表并显示准备状态
         fetch(`${WORKER_URL}/state`).then(r=>r.json()).then(data=>{
             const playersData = data.players;
             let html = "";
             for (let pid of currentRoom.players) {
                 const p = playersData[pid];
                 if (p) {
-                    html += `<div class="player-card ${p.isReady ? 'ready' : ''} ${pid === currentRoom.hostId ? 'host' : ''}">
-                        ${p.name} (${p.class}) ${p.isReady ? '✓' : '○'}
-                    </div>`;
+                    html += `<div class="player-card ${p.isReady ? 'ready' : ''} ${pid === currentRoom.hostId ? 'host' : ''}">${p.name} (${p.class}) ${p.isReady ? '✓' : '○'}</div>`;
                 }
             }
             document.getElementById("roomPlayerList").innerHTML = html || "<div>等待玩家...</div>";
