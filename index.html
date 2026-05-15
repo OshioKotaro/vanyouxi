@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 完整剧情版（最终回合修复）</title>
+    <title>🐉 AI跑团 · 完整剧情版（最终修复）</title>
     <style>
-        /* 样式同前，省略重复，实际使用请保留完整样式 */
         * { box-sizing: border-box; }
         body { background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%); font-family: -apple-system, monospace; color: #e8e2d4; padding: 12px; margin: 0; }
         .container { max-width: 700px; margin: 0 auto; background: rgba(0,0,0,0.6); border-radius: 24px; padding: 16px; border: 1px solid #c4a46e; }
@@ -54,7 +53,6 @@
         <span id="playerNameDisplay"></span>
     </div>
     
-    <!-- 登录界面 -->
     <div id="loginPanel" class="panel">
         <h3>✨ 创建新角色</h3>
         <div class="form-group">
@@ -433,7 +431,7 @@
         addLog("轮到玩家回合！", "system", false);
     }
     
-    // 修复：每次行动前强制从服务器获取最新房间数据，确保玩家列表准确
+    // 最终修复：每次行动前强制从服务器获取最新房间数据，确保玩家列表准确
     async function takeAction() {
         if (isActing) { addLog("请等待...", "system", true); return; }
         
@@ -497,6 +495,7 @@
             
             // 回合切换（基于最新的玩家列表）
             const playerList = currentRoom.players;
+            console.log("当前玩家列表:", playerList, "当前玩家ID:", currentPlayer.id);
             const currentIdx = playerList.indexOf(currentPlayer.id);
             if (currentIdx === -1) {
                 addLog("同步错误：当前玩家不在房间列表中，请刷新页面", "system", true);
@@ -534,6 +533,7 @@
                 const newRoom = data.rooms[currentPlayer.roomId];
                 if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
                     currentRoom = newRoom;
+                    console.log("房间状态更新:", currentRoom);
                     if (currentRoom.status === "playing" && !gameActive) {
                         gameActive = true;
                         showPanel("game");
