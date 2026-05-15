@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 完整剧情版（修复）</title>
+    <title>🐉 AI跑团 · 完整剧情版（回合顺序修复）</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -95,7 +95,6 @@
             display: flex;
             justify-content: space-between;
         }
-        /* 修复长文本显示 */
         .combat-log {
             background: #030807;
             height: 250px;
@@ -231,7 +230,6 @@
     let isActing = false;
     let displayedMessageIds = new Set();
     
-    // 属性分配相关
     let pendingAttributes = { str: 10, dex: 10, int: 10, con: 10 };
     let pointsLeft = 20;
     
@@ -347,7 +345,6 @@
         } catch(e) { console.warn(e); }
     }
     
-    // 创建角色（带属性分配）
     document.getElementById("createPlayerBtn").onclick = async () => {
         const name = document.getElementById("playerName").value.trim();
         const cls = document.getElementById("playerClass").value;
@@ -452,7 +449,6 @@
             window._sceneShown = false;
             showPanel("game");
             renderGameUI();
-            // 生成开场剧情
             const intro = await generateNarrative("为冒险队伍生成一个简短的黑暗奇幻开场场景，描述酒馆中的委托。");
             addLog(intro, "ai", false);
             addLog("你可以进行：探索、对话或攻击（如果有敌人）。", "system", false);
@@ -483,7 +479,6 @@
     
     function renderGameUI() {
         if (!currentRoom) return;
-        // 回合顺序判断：使用 phase 和 turn
         const isPlayerTurn = currentRoom.phase === "player";
         const myTurn = isPlayerTurn && currentRoom.turn === currentPlayer.id;
         const canAct = myTurn && gameActive && !isActing;
@@ -504,14 +499,61 @@
         if (actBtn) actBtn.disabled = !canAct;
     }
     
+    async function executeNPCTurn() {
+        addLog("⚔️ NPC/敌人开始行动...", "system", false);
+        if (currentRoom.enemies && currentRoom.enemies.length > 0) {
+            const stateRes = await fetch(`${WORKER_URL}/state`);
+            const stateData = await stateRes.json();
+            const playersData = stateData.players;
+            const enemies = currentRoom.enemies;
+            let actions = [];
+            let updates = {};
+            for (let enemy of enemies) {
+                const alivePlayers = currentRoom.players.filter(pid => playersData[pid] && playersData[pid].hp > 0);
+                if (alivePlayers.length === 0) break;
+                const targetId = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                const target = playersData[targetId];
+                const damage = Math.floor(Math.random() * 12) + 6;
+                target.hp = Math.max(0, target.hp - damage);
+                updates[targetId] = target;
+                const prompt = `描述战斗：${enemy.name}攻击${target.name}，造成${damage}伤害，一句话。`;
+                const desc = await generateNarrative(prompt);
+                actions.push(desc);
+            }
+            for (let pid in updates) {
+                await api("updatePlayer", { playerId: pid, updates: { hp: updates[pid].hp } });
+                if (pid === currentPlayer.id) currentPlayer.hp = updates[pid].hp;
+            }
+            for (let act of actions) {
+                addLog(act, "ai", false);
+            }
+        } else {
+            const narrative = await generateNarrative("NPC或环境变化，描述新的线索或事件。");
+            addLog(narrative, "ai", false);
+            await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
+        }
+        const firstPlayer = currentRoom.players[0];
+        await api("updateGame", { roomId: currentRoom.id, turn: firstPlayer, phase: "player" });
+        await refreshState();
+        addLog("轮到玩家回合！", "system", false);
+    }
+    
+    // 修复 takeAction：确保使用最新的房间玩家列表
     async function takeAction() {
         if (isActing) { addLog("请等待...", "system", true); return; }
+        
+        // 重新拉取最新的房间状态，避免玩家列表过期
+        const freshState = await fetch(`${WORKER_URL}/state`);
+        const freshData = await freshState.json();
+        if (freshData.rooms && currentPlayer.roomId && freshData.rooms[currentPlayer.roomId]) {
+            currentRoom = freshData.rooms[currentPlayer.roomId];
+        }
+        
         if (!currentRoom || currentRoom.phase !== "player") { addLog("现在是NPC/敌人回合，请稍后", "system", true); return; }
         if (currentRoom.turn !== currentPlayer.id) { addLog("还没轮到你", "system", true); return; }
         const actionText = document.getElementById("actionInput").value;
         if (!actionText) { addLog("请输入行动", "system", true); return; }
         
-        // 记录玩家行动（修复问题2）
         addLog(`🎯 ${currentPlayer.name} 行动：${actionText}`, "action", false);
         
         isActing = true;
@@ -519,7 +561,6 @@
         document.getElementById("actionInput").disabled = true;
         try {
             const lower = actionText.toLowerCase();
-            // 判断是否攻击（如果有敌人）
             let isCombat = false;
             let target = null;
             if (currentRoom.enemies && currentRoom.enemies.length > 0) {
@@ -529,7 +570,6 @@
                 }
             }
             if (isCombat) {
-                // 战斗逻辑
                 const dice = Math.floor(Math.random() * 20) + 1;
                 const attackRoll = dice + currentPlayer.atkBonus;
                 const isHit = attackRoll >= (target.ac || 11);
@@ -540,7 +580,6 @@
                     if (target.hp < 0) target.hp = 0;
                 }
                 const newEnemies = currentRoom.enemies.filter(e => e.hp > 0);
-                // 更新敌人列表
                 await api("updateGame", { roomId: currentRoom.id, enemies: newEnemies });
                 addLog(`${currentPlayer.name} 掷出 ${dice}，${isHit ? "命中 " + damage + " 伤害" : "未命中"}`, "action", false);
                 const hitResult = isHit ? "命中" : "未命中";
@@ -552,29 +591,27 @@
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                // 非战斗：探索/对话/其他，调用 AI 生成剧情
                 const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。请生成一段简短的描述和可能的结果，并建议是否触发战斗或获得物品。`;
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
-                // 更新场景描述
                 await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
             }
             
-            // 切换回合：获取玩家列表，找到下一个玩家
+            // 回合切换（基于最新的玩家列表）
             const playerList = currentRoom.players;
             const currentIdx = playerList.indexOf(currentPlayer.id);
+            if (currentIdx === -1) {
+                // 防御：如果找不到当前玩家，重新同步状态
+                await refreshState();
+                return;
+            }
             const nextIdx = (currentIdx + 1) % playerList.length;
-            const nextTurnPlayer = playerList[nextIdx];
-            
-            // 如果下一个玩家是第一个玩家（即所有玩家都行动过了），则切换到 NPC 回合
             if (nextIdx === 0) {
-                // 所有玩家行动完毕，切换到 NPC/敌人回合
+                // 所有玩家行动完毕，进入 NPC 回合
                 await api("updateGame", { roomId: currentRoom.id, turn: null, phase: "npc" });
-                // 执行 NPC 回合（AI 生成剧情或敌人攻击）
                 await executeNPCTurn();
             } else {
-                // 否则切换到下一个玩家
-                await api("updateGame", { roomId: currentRoom.id, turn: nextTurnPlayer });
+                await api("updateGame", { roomId: currentRoom.id, turn: playerList[nextIdx] });
             }
             await refreshState();
             renderGameUI();
@@ -585,54 +622,6 @@
             isActing = false;
             renderGameUI();
         }
-    }
-    
-    // NPC/敌人回合逻辑
-    async function executeNPCTurn() {
-        addLog("⚔️ NPC/敌人开始行动...", "system", false);
-        // 如果有敌人，执行敌人攻击
-        if (currentRoom.enemies && currentRoom.enemies.length > 0) {
-            const enemies = currentRoom.enemies;
-            const players = currentRoom.players;
-            let updatedPlayers = {};
-            let actions = [];
-            for (let enemy of enemies) {
-                // 随机选择一个存活的玩家
-                const alivePlayers = players.filter(pid => currentPlayer && currentPlayer.hp > 0); // 简化，实际需要从服务器获取玩家血量
-                // 更可靠的方法：从服务器获取最新玩家数据
-                const stateRes = await fetch(`${WORKER_URL}/state`);
-                const stateData = await stateRes.json();
-                const alive = players.filter(pid => stateData.players[pid] && stateData.players[pid].hp > 0);
-                if (alive.length === 0) break;
-                const targetId = alive[Math.floor(Math.random() * alive.length)];
-                const target = stateData.players[targetId];
-                const damage = Math.floor(Math.random() * 12) + 6;
-                target.hp = Math.max(0, target.hp - damage);
-                updatedPlayers[targetId] = target;
-                // 生成 AI 描述
-                const prompt = `描述战斗：${enemy.name}攻击${target.name}，造成${damage}伤害，一句话。`;
-                const desc = await generateNarrative(prompt);
-                actions.push(desc);
-            }
-            // 更新玩家血量
-            for (let pid in updatedPlayers) {
-                await api("updatePlayer", { playerId: pid, updates: { hp: updatedPlayers[pid].hp } });
-            }
-            for (let act of actions) {
-                addLog(act, "ai", false);
-            }
-        } else {
-            // 没有敌人时，AI 生成剧情推进
-            const narrative = await generateNarrative("NPC 或剧情推进，描述环境变化或新事件。");
-            addLog(narrative, "ai", false);
-            await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
-        }
-        // NPC 回合结束，切换回玩家回合
-        const playerList = currentRoom.players;
-        const firstPlayer = playerList[0];
-        await api("updateGame", { roomId: currentRoom.id, turn: firstPlayer, phase: "player" });
-        await refreshState();
-        addLog("轮到玩家回合！", "system", false);
     }
     
     async function syncLoop() {
