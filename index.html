@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 最终完美版（无酒馆）</title>
+    <title>🐉 AI跑团 · 最终精简版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -174,7 +174,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 最终完美版（无酒馆）</h1>
+    <h1>🐉 AI跑团 · 最终精简版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -417,14 +417,13 @@
     
     async function generateRandomOpening() {
         const theme = openingThemes[Math.floor(Math.random() * openingThemes.length)];
-        const prompt = `生成一个黑暗奇幻/克苏鲁风格的开场场景，地点是“${theme}”。不要使用酒馆或类似场所。描述玩家队伍到达此地的过程以及初步遇到的氛围。直接叙述，50字以内。`;
+        const prompt = `生成一个黑暗奇幻/克苏鲁风格的开场场景，地点是“${theme}”。必须详细描述（80-120字）。描述玩家队伍到达此地的过程以及初步遇到的氛围。直接叙述。`;
         return await generateNarrative(prompt);
     }
     
     async function generateNarrative(prompt, extraContext = "") {
         const history = getLogHistory();
-        const currentSceneText = currentRoom?.currentScene || "未知场景";
-        const systemPrompt = `你是DND地下城主。当前场景是：${currentSceneText}。你的回答必须严格基于这个场景，不得引入其他地点（如酒馆、旅店、村庄等）。直接描述结果，禁止输出选项、列表、'可能的结果'、'建议'或提问。剧情简洁直接，不绕弯子。战斗要快速结算。`;
+        const systemPrompt = "你是DND地下城主。直接描述结果，禁止输出选项、列表、'可能的结果'、'建议'或提问。剧情简洁直接，不绕弯子。";
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
@@ -684,7 +683,7 @@
         } else {
             const history = getLogHistory();
             const lastEvents = history.slice(-5).map(h => h.content).join(" ");
-            const prompt = `当前场景：${currentRoom.currentScene || "冒险中"}。最近事件：${lastEvents}。生成一段简短的剧情推进，直接描述变化，不要引入新敌人，不要绕弯子，不要提到酒馆。40字以内。`;
+            const prompt = `当前场景：${currentRoom.currentScene || "冒险中"}。最近事件：${lastEvents}。生成一段简短的剧情推进，直接描述变化，不要引入新敌人，不要绕弯子。40字以内。`;
             const narrative = await generateNarrative(prompt);
             addLog(narrative, "ai", false);
             await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
@@ -790,7 +789,7 @@
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知场景"}。他的属性：力量${currentPlayer.attributes.str}，敏捷${currentPlayer.attributes.dex}，智力${currentPlayer.attributes.int}，体质${currentPlayer.attributes.con}。他拥有技能：${currentPlayer.skills.join(", ")}。物品：${currentPlayer.inventory ? currentPlayer.inventory.map(i=>`${i.name}×${i.quantity}`).join(", ") : "无"}。请判断行动合理性。必须基于当前场景，不要引入其他地点（如酒馆、旅店）。直接描述结果（成功/失败/获得物品/触发战斗），简洁不绕弯子。`;
+                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知场景"}。他的属性：力量${currentPlayer.attributes.str}，敏捷${currentPlayer.attributes.dex}，智力${currentPlayer.attributes.int}，体质${currentPlayer.attributes.con}。他拥有技能：${currentPlayer.skills.join(", ")}。物品：${currentPlayer.inventory ? currentPlayer.inventory.map(i=>`${i.name}×${i.quantity}`).join(", ") : "无"}。请判断行动合理性，直接描述结果（成功/失败/获得物品/触发战斗），简洁不绕弯子。`;
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
                 await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
