@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 完整规则版</title>
+    <title>🐉 AI跑团 · 最终完美版</title>
     <style>
         * { box-sizing: border-box; }
         body {
             background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%);
-            font-family: -apple-system, monospace;
+            font-family: -apple-system, 'Segoe UI', sans-serif;
             color: #e8e2d4;
             padding: 12px;
             margin: 0;
@@ -97,23 +97,26 @@
         }
         .combat-log {
             background: #030807;
-            height: 220px;
+            height: 250px;
             overflow-y: auto;
             padding: 10px;
             border-radius: 16px;
-            font-size: 12px;
+            font-size: 14px;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, monospace;
+            line-height: 1.4;
             white-space: pre-wrap;
             word-break: break-word;
             overflow-wrap: break-word;
         }
         .combat-log p {
-            margin: 5px 0;
-            border-left: 2px solid #dba450;
-            padding-left: 8px;
+            margin: 6px 0;
+            border-left: 3px solid #dba450;
+            padding-left: 10px;
         }
         .ai-text { color: #f7e6b0; font-style: italic; }
-        .action-text { color: #ffaa66; }
-        .system-text { color: #aaa; font-size: 11px; }
+        .action-text { color: #ffaa66; font-weight: 500; }
+        .system-text { color: #ccc; font-size: 13px; }
+        .damage-text { color: #ff8888; font-weight: bold; }
         .action-area {
             display: flex;
             gap: 8px;
@@ -126,6 +129,7 @@
             padding: 10px;
             border-radius: 40px;
             color: #f7efcf;
+            font-size: 14px;
         }
         #actBtn { flex: 1; background: #9e6f3e; }
         .turn-indicator {
@@ -133,7 +137,7 @@
             padding: 8px;
             border-radius: 40px;
             text-align: center;
-            font-size: 12px;
+            font-size: 13px;
             margin-bottom: 10px;
         }
         .inventory-panel {
@@ -141,7 +145,7 @@
             border-radius: 16px;
             padding: 8px;
             margin-top: 10px;
-            font-size: 11px;
+            font-size: 12px;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
@@ -158,11 +162,19 @@
         .attr-buttons { display: flex; gap: 5px; }
         .attr-buttons button { width: 30px; padding: 2px; }
         .points-left { font-weight: bold; color: gold; }
+        .game-over {
+            color: #ff6666;
+            font-weight: bold;
+            text-align: center;
+            background: #330000;
+            padding: 8px;
+            border-radius: 20px;
+        }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 完整规则版</h1>
+    <h1>🐉 AI跑团 · 最终完美版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -214,7 +226,7 @@
         <div id="turnIndicator" class="turn-indicator">等待开始...</div>
         <div id="sceneDesc" style="font-size: 13px; margin-bottom: 10px;"></div>
         <div id="enemyContainer"></div>
-        <div id="playerStats" style="margin-top: 10px; background: #00000066; border-radius: 16px; padding: 8px; font-size: 12px;"></div>
+        <div id="playerStats" style="margin-top: 10px; background: #00000066; border-radius: 16px; padding: 8px; font-size: 13px;"></div>
         <div id="inventoryPanel" class="inventory-panel">
             <span>📦 物品栏</span>
             <span id="itemsList"></span>
@@ -238,6 +250,7 @@
     let currentRoom = null;
     let syncInterval = null;
     let gameActive = false;
+    let gameOver = false;
     let lastMessageId = 0;
     let isActing = false;
     let displayedMessageIds = new Set();
@@ -245,9 +258,9 @@
     let pendingAttributes = { str: 10, dex: 10, int: 10, con: 10 };
     let pointsLeft = 20;
     
-    // 随机开场主题列表
+    // 随机开场主题（不含酒馆）
     const openingThemes = [
-        "废弃神庙", "阴森墓地", "瘟疫村庄", "诅咒森林", "沉没神殿", "黑市酒馆", "巫师高塔", "古战场遗迹"
+        "废弃神庙", "阴森墓地", "瘟疫村庄", "诅咒森林", "沉没神殿", "巫师高塔", "古战场遗迹", "黑暗沼泽", "冰封洞穴", "血色修道院"
     ];
     
     function updateAttributeUI() {
@@ -298,7 +311,11 @@
         if (messageId && displayedMessageIds.has(messageId)) return;
         if (messageId) displayedMessageIds.add(messageId);
         const p = document.createElement("p");
-        const cls = type === "ai" ? "ai-text" : (type === "action" ? "action-text" : "system-text");
+        let cls = "";
+        if (type === "ai") cls = "ai-text";
+        else if (type === "action") cls = "action-text";
+        else if (type === "damage") cls = "damage-text";
+        else cls = "system-text";
         p.innerHTML = `<span class="${cls}">${content}</span>`;
         logDiv.appendChild(p);
         p.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -336,7 +353,6 @@
         });
     }
     
-    // 更新物品栏显示
     function updateInventoryUI() {
         if (!currentPlayer) return;
         const itemsDiv = document.getElementById("itemsList");
@@ -350,7 +366,21 @@
         itemsDiv.innerText = itemsText;
     }
     
-    // 使用物品逻辑
+    async function addItemToInventory(itemName, quantity = 1) {
+        if (!currentPlayer) return false;
+        if (!currentPlayer.inventory) currentPlayer.inventory = [];
+        const existing = currentPlayer.inventory.find(i => i.name === itemName);
+        if (existing) {
+            existing.quantity += quantity;
+        } else {
+            currentPlayer.inventory.push({ name: itemName, quantity });
+        }
+        await api("updatePlayer", { playerId: currentPlayer.id, updates: { inventory: currentPlayer.inventory } });
+        updateInventoryUI();
+        addLog(`📦 获得 ${itemName} × ${quantity}，已加入物品栏。`, "system", false);
+        return true;
+    }
+    
     function useItem(itemName) {
         if (!currentPlayer.inventory) return false;
         const item = currentPlayer.inventory.find(i => i.name.toLowerCase() === itemName.toLowerCase());
@@ -364,12 +394,12 @@
             }
             addLog(`💊 ${currentPlayer.name} 使用了治疗药水，恢复了 ${heal} HP。`, "system", false);
             updateInventoryUI();
+            api("updatePlayer", { playerId: currentPlayer.id, updates: { hp: currentPlayer.hp, inventory: currentPlayer.inventory } });
             return true;
         }
         return false;
     }
     
-    // 检查技能是否存在并消耗MP
     function useSkill(skillName) {
         if (!currentPlayer.skills) return false;
         const hasSkill = currentPlayer.skills.some(s => s.toLowerCase() === skillName.toLowerCase());
@@ -382,19 +412,19 @@
         else return false;
         if (currentPlayer.mp < mpCost) return false;
         currentPlayer.mp -= mpCost;
+        api("updatePlayer", { playerId: currentPlayer.id, updates: { mp: currentPlayer.mp } });
         return { success: true, damageBonus, mpCost };
     }
     
-    // 随机开场
     async function generateRandomOpening() {
         const theme = openingThemes[Math.floor(Math.random() * openingThemes.length)];
-        const prompt = `生成一个黑暗奇幻/克苏鲁风格的开场场景，地点是“${theme}”。描述玩家队伍到达此地的过程以及初步遇到的氛围。不要列出选项，直接叙述。约80字。`;
+        const prompt = `生成一个黑暗奇幻/克苏鲁风格的开场场景，地点是“${theme}”。不要使用酒馆或类似场所。描述玩家队伍到达此地的过程以及初步遇到的氛围。直接叙述，50字以内。`;
         return await generateNarrative(prompt);
     }
     
     async function generateNarrative(prompt, extraContext = "") {
         const history = getLogHistory();
-        const systemPrompt = "你是DND地下城主。直接描述结果，禁止输出选项、列表、'可能的结果'、'建议'或提问。";
+        const systemPrompt = "你是DND地下城主。直接描述结果，禁止输出选项、列表、'可能的结果'、'建议'或提问。剧情要简洁直接，不要绕弯子。战斗要快速结算，玩家死亡则游戏结束。";
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
@@ -411,8 +441,9 @@
         }
     }
     
-    async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage) {
+    async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage, targetName, targetHP) {
         const systemPrompt = "直接描述战斗结果，不要给出选项或提问。";
+        const prompt = `${playerName}(${playerClass}) ${actionDesc}，${hitResult ? "命中" : "未命中"}，造成${damage}伤害。${targetName}剩余HP ${targetHP}。`;
         try {
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
@@ -438,12 +469,21 @@
         } catch(e) { console.warn(e); }
     }
     
+    // 玩家死亡处理
+    async function handlePlayerDeath() {
+        gameActive = false;
+        gameOver = true;
+        addLog(`💀 ${currentPlayer.name} 已经死亡，游戏结束。`, "system", false);
+        document.getElementById("actBtn").disabled = true;
+        document.getElementById("actionInput").disabled = true;
+        document.getElementById("turnIndicator").innerHTML = "💀 游戏结束";
+    }
+    
     document.getElementById("createPlayerBtn").onclick = async () => {
         const name = document.getElementById("playerName").value.trim();
         const cls = document.getElementById("playerClass").value;
         if (!name) { alert("请输入名字"); return; }
         const attributes = { ...pendingAttributes };
-        // 初始技能和物品
         let skills = [];
         let inventory = [{ name: "治疗药水", quantity: 2 }];
         if (cls === "战士") skills = ["破甲斩"];
@@ -490,7 +530,7 @@
         }
         if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
             currentRoom = data.rooms[currentPlayer.roomId];
-            if (currentRoom.status === "playing" && !gameActive) {
+            if (currentRoom.status === "playing" && !gameActive && !gameOver) {
                 gameActive = true;
                 showPanel("game");
                 renderGameUI();
@@ -500,7 +540,7 @@
                 }
             } else if (currentRoom.status === "waiting") {
                 renderRoomUI();
-            } else if (gameActive) {
+            } else if (gameActive && !gameOver) {
                 renderGameUI();
             }
         } else {
@@ -554,7 +594,7 @@
             renderGameUI();
             const intro = await generateRandomOpening();
             addLog(intro, "ai", false);
-            addLog("你可以进行：探索、对话或攻击（如果有敌人）。", "system", false);
+            addLog("你可以行动。", "system", false);
         } else {
             alert("开始失败: " + res.error);
         }
@@ -582,6 +622,12 @@
     
     function renderGameUI() {
         if (!currentRoom) return;
+        if (gameOver) {
+            document.getElementById("turnIndicator").innerHTML = "💀 游戏结束";
+            document.getElementById("actBtn").disabled = true;
+            document.getElementById("actionInput").disabled = true;
+            return;
+        }
         const isPlayerTurn = currentRoom.phase === "player";
         const myTurn = isPlayerTurn && currentRoom.turn === currentPlayer.id;
         const canAct = myTurn && gameActive && !isActing;
@@ -604,13 +650,13 @@
     }
     
     async function executeNPCTurn() {
-        addLog("⚔️ NPC/敌人开始行动...", "system", false);
+        if (gameOver) return;
+        addLog("⚔️ 敌人开始行动...", "system", false);
         if (currentRoom.enemies && currentRoom.enemies.length > 0) {
             const stateRes = await fetch(`${WORKER_URL}/state`);
             const stateData = await stateRes.json();
             const playersData = stateData.players;
             const enemies = currentRoom.enemies;
-            let actions = [];
             let updates = {};
             for (let enemy of enemies) {
                 const alivePlayers = currentRoom.players.filter(pid => playersData[pid] && playersData[pid].hp > 0);
@@ -620,31 +666,38 @@
                 const damage = Math.floor(Math.random() * 12) + 6;
                 target.hp = Math.max(0, target.hp - damage);
                 updates[targetId] = target;
-                const prompt = `描述敌人 ${enemy.name} 对 ${target.name} 发动攻击，造成 ${damage} 点伤害。直接描述战斗过程。`;
-                const desc = await generateNarrative(prompt);
-                actions.push(desc);
+                addLog(`${enemy.name} 攻击 ${target.name}，造成 ${damage} 伤害！`, "damage", false);
+                if (target.hp <= 0) {
+                    addLog(`💀 ${target.name} 死亡！`, "damage", false);
+                    if (targetId === currentPlayer.id) {
+                        await handlePlayerDeath();
+                        return;
+                    }
+                }
             }
             for (let pid in updates) {
                 await api("updatePlayer", { playerId: pid, updates: { hp: updates[pid].hp } });
                 if (pid === currentPlayer.id) currentPlayer.hp = updates[pid].hp;
             }
-            for (let act of actions) addLog(act, "ai", false);
         } else {
+            // 无敌人时剧情推进
             const history = getLogHistory();
             const lastEvents = history.slice(-5).map(h => h.content).join(" ");
-            const prompt = `当前场景：${currentRoom.currentScene || "冒险中"}。最近事件：${lastEvents}。请生成一段简短的剧情推进，不要引入新角色，直接描述变化。`;
+            const prompt = `当前场景：${currentRoom.currentScene || "冒险中"}。最近事件：${lastEvents}。生成一段简短的剧情推进，直接描述变化，不要引入新敌人，不要绕弯子。40字以内。`;
             const narrative = await generateNarrative(prompt);
             addLog(narrative, "ai", false);
             await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
         }
-        const firstPlayer = currentRoom.players[0];
-        await api("updateGame", { roomId: currentRoom.id, turn: firstPlayer, phase: "player" });
-        await refreshState();
-        addLog("轮到玩家回合！", "system", false);
+        if (!gameOver) {
+            const firstPlayer = currentRoom.players[0];
+            await api("updateGame", { roomId: currentRoom.id, turn: firstPlayer, phase: "player" });
+            await refreshState();
+            addLog("轮到玩家回合！", "system", false);
+        }
     }
     
     async function takeAction() {
-        if (isActing) { addLog("请等待...", "system", true); return; }
+        if (isActing || gameOver) { addLog("请等待...", "system", true); return; }
         
         const stateRes = await fetch(`${WORKER_URL}/state`);
         const stateData = await stateRes.json();
@@ -672,7 +725,6 @@
             let skillUsed = null;
             let itemUsed = null;
             
-            // 检测技能使用
             if (currentPlayer.skills) {
                 for (let skill of currentPlayer.skills) {
                     if (lower.includes(skill.toLowerCase())) {
@@ -681,7 +733,6 @@
                     }
                 }
             }
-            // 检测物品使用
             if (lower.includes("使用治疗药水") || lower.includes("喝治疗药水")) {
                 itemUsed = "治疗药水";
                 if (!useItem(itemUsed)) {
@@ -691,8 +742,6 @@
                     document.getElementById("actionInput").value = "";
                     return;
                 }
-                // 物品使用后直接结束回合？物品使用通常不消耗回合，但为了简单，也切换回合。
-                // 这里物品使用后同样会切换回合。
             }
             
             if (currentRoom.enemies && currentRoom.enemies.length > 0) {
@@ -719,6 +768,7 @@
                     }
                     skillBonus = skillResult.damageBonus;
                     mpCost = skillResult.mpCost;
+                    addLog(`使用技能 ${skillUsed}，消耗 ${mpCost} MP。`, "system", false);
                 }
                 if (isHit) {
                     let base = currentPlayer.baseDmg + (skillBonus || 0);
@@ -726,26 +776,33 @@
                     target.hp -= damage;
                     if (target.hp < 0) target.hp = 0;
                 }
+                addLog(`${currentPlayer.name} 掷出 ${dice}，攻击加值 ${currentPlayer.atkBonus}，合计 ${attackRoll} vs AC ${target.ac || 11} → ${isHit ? "命中" : "未命中"}`, "damage", false);
+                if (isHit) addLog(`造成 ${damage} 点伤害，${target.name} 剩余 HP ${target.hp}/${target.maxHp}`, "damage", false);
                 const newEnemies = currentRoom.enemies.filter(e => e.hp > 0);
                 await api("updateGame", { roomId: currentRoom.id, enemies: newEnemies });
-                addLog(`${currentPlayer.name} 掷出 ${dice}，${isHit ? "命中 " + damage + " 伤害" : "未命中"}`, "action", false);
                 const hitResult = isHit ? "命中" : "未命中";
-                const aiDesc = await generateBattleDescription(currentPlayer.name, currentPlayer.class, actionText, hitResult, damage);
+                const aiDesc = await generateBattleDescription(currentPlayer.name, currentPlayer.class, actionText, isHit, damage, target.name, target.hp);
                 addLog(aiDesc, "ai", false);
-                if (mpCost > 0) {
-                    addLog(`技能消耗 ${mpCost} MP，剩余 ${currentPlayer.mp} MP。`, "system", false);
-                }
                 if (newEnemies.length === 0) {
                     addLog("🏆 战斗胜利！", "ai", false);
                     const afterBattle = await generateNarrative("战斗结束后，描述场景的变化或新的发现。");
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                // 非战斗行动：传入职业和属性，让 AI 判断合理性
-                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。他的属性：力量${currentPlayer.attributes.str}，敏捷${currentPlayer.attributes.dex}，智力${currentPlayer.attributes.int}，体质${currentPlayer.attributes.con}。他拥有技能：${currentPlayer.skills.join(", ")}。物品：${currentPlayer.inventory ? currentPlayer.inventory.map(i=>`${i.name}×${i.quantity}`).join(", ") : "无"}。当前场景：${currentRoom.currentScene || "未知"}。请判断这个行动是否合理。如果不合理（例如没有对应技能或能力），描述失败的结果并说明原因。如果合理，根据玩家属性和技能描述成功的结果，可能获得物品、信息或触发战斗。直接描述结果，不要给出选项。`;
+                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。他的属性：力量${currentPlayer.attributes.str}，敏捷${currentPlayer.attributes.dex}，智力${currentPlayer.attributes.int}，体质${currentPlayer.attributes.con}。他拥有技能：${currentPlayer.skills.join(", ")}。物品：${currentPlayer.inventory ? currentPlayer.inventory.map(i=>`${i.name}×${i.quantity}`).join(", ") : "无"}。当前场景：${currentRoom.currentScene || "未知"}。判断行动合理性，直接描述结果（成功/失败/获得物品/触发战斗），简洁不绕弯子。`;
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
                 await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
+                // 检查是否获得物品（简单关键词检测）
+                if (narrative.includes("获得") && (narrative.includes("药水") || narrative.includes("金币") || narrative.includes("武器"))) {
+                    // 简单示例：获得治疗药水
+                    await addItemToInventory("治疗药水", 1);
+                }
+            }
+            
+            if (currentPlayer.hp <= 0) {
+                await handlePlayerDeath();
+                return;
             }
             
             // 回合切换
@@ -781,12 +838,15 @@
                 currentPlayer = data.players[currentPlayer.id];
                 document.getElementById("playerNameDisplay").innerHTML = `${currentPlayer.name} (${currentPlayer.class})`;
                 updateInventoryUI();
+                if (currentPlayer.hp <= 0 && !gameOver) {
+                    await handlePlayerDeath();
+                }
             }
             if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
                 const newRoom = data.rooms[currentPlayer.roomId];
                 if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
                     currentRoom = newRoom;
-                    if (currentRoom.status === "playing" && !gameActive) {
+                    if (currentRoom.status === "playing" && !gameActive && !gameOver) {
                         gameActive = true;
                         showPanel("game");
                         renderGameUI();
@@ -796,7 +856,7 @@
                         }
                     } else if (currentRoom.status === "waiting") {
                         renderRoomUI();
-                    } else if (gameActive) {
+                    } else if (gameActive && !gameOver) {
                         renderGameUI();
                     }
                 }
@@ -822,7 +882,7 @@
     
     document.getElementById("joinRoomBtn").onclick = joinRoom;
     document.getElementById("actBtn").onclick = takeAction;
-    document.getElementById("actionInput").addEventListener("keypress", (e) => { if (e.key === "Enter" && !isActing) { e.preventDefault(); takeAction(); } });
+    document.getElementById("actionInput").addEventListener("keypress", (e) => { if (e.key === "Enter" && !isActing && !gameOver) { e.preventDefault(); takeAction(); } });
     initAttributeControls();
     syncInterval = setInterval(syncLoop, 1000);
     showPanel("login");
