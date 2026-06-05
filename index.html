@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 最终精简版</title>
+    <title>🐉 AI跑团 · 全角色支持版</title>
     <style>
+        /* 样式与之前相同，略去重复，请直接使用您的原始样式 */
         * { box-sizing: border-box; }
         body {
             background: linear-gradient(135deg, #0a0f0e 0%, #1a1f1e 100%);
@@ -174,7 +175,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 最终精简版</h1>
+    <h1>🐉 AI跑团 · 全角色支持版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -244,7 +245,7 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    const GROQ_API_KEY = "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";  // 请填入你的 Groq API Key
+    const GROQ_API_KEY = "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";  // 请填入你的 Groq API Key
     
     let currentPlayer = null;
     let currentRoom = null;
@@ -436,6 +437,7 @@
             const result = await res.json();
             return result.success ? result.text : prompt;
         } catch(e) {
+            console.error("生成剧情失败:", e);
             return "你环顾四周，没有特别的事情发生。";
         }
     }
@@ -452,6 +454,7 @@
             const result = await res.json();
             return result.description || `${playerName}的攻击！`;
         } catch(e) {
+            console.error("生成战斗描述失败:", e);
             return `${playerName}的攻击！`;
         }
     }
@@ -530,19 +533,22 @@
             }
         }
         if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
-            currentRoom = data.rooms[currentPlayer.roomId];
-            if (currentRoom.status === "playing" && !gameActive && !gameOver) {
-                gameActive = true;
-                showPanel("game");
-                renderGameUI();
-                if (currentRoom.currentScene && !window._sceneShown) {
-                    addLog(currentRoom.currentScene, "ai", true);
-                    window._sceneShown = true;
+            const newRoom = data.rooms[currentPlayer.roomId];
+            if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
+                currentRoom = newRoom;
+                if (currentRoom.status === "playing" && !gameActive && !gameOver) {
+                    gameActive = true;
+                    showPanel("game");
+                    renderGameUI();
+                    if (currentRoom.currentScene && !window._sceneShown) {
+                        addLog(currentRoom.currentScene, "ai", true);
+                        window._sceneShown = true;
+                    }
+                } else if (currentRoom.status === "waiting") {
+                    renderRoomUI();
+                } else if (gameActive && !gameOver) {
+                    renderGameUI();
                 }
-            } else if (currentRoom.status === "waiting") {
-                renderRoomUI();
-            } else if (gameActive && !gameOver) {
-                renderGameUI();
             }
         } else {
             document.getElementById("roomInfo").innerHTML = "<div>暂无房间</div>";
@@ -699,6 +705,7 @@
     async function takeAction() {
         if (isActing || gameOver) { addLog("请等待...", "system", true); return; }
         
+        // 获取最新房间状态
         const stateRes = await fetch(`${WORKER_URL}/state`);
         const stateData = await stateRes.json();
         if (stateData.rooms && currentPlayer.roomId && stateData.rooms[currentPlayer.roomId]) {
@@ -789,10 +796,12 @@
                     addLog(afterBattle, "ai", false);
                 }
             } else {
-                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知场景"}。他的属性：力量${currentPlayer.attributes.str}，敏捷${currentPlayer.attributes.dex}，智力${currentPlayer.attributes.int}，体质${currentPlayer.attributes.con}。他拥有技能：${currentPlayer.skills.join(", ")}。物品：${currentPlayer.inventory ? currentPlayer.inventory.map(i=>`${i.name}×${i.quantity}`).join(", ") : "无"}。请判断行动合理性，直接描述结果（成功/失败/获得物品/触发战斗），简洁不绕弯子。`;
+                // 非战斗行动：确保 prompt 中包含玩家行动和当前场景
+                const prompt = `玩家 ${currentPlayer.name} (${currentPlayer.class}) 想要：${actionText}。当前场景：${currentRoom.currentScene || "未知"}。他的属性：力量${currentPlayer.attributes.str}，敏捷${currentPlayer.attributes.dex}，智力${currentPlayer.attributes.int}，体质${currentPlayer.attributes.con}。他拥有技能：${currentPlayer.skills.join(", ")}。物品：${currentPlayer.inventory ? currentPlayer.inventory.map(i=>`${i.name}×${i.quantity}`).join(", ") : "无"}。请直接描述这个行动的结果（成功/失败/获得物品/触发战斗），不要列出选项。`;
                 const narrative = await generateNarrative(prompt);
                 addLog(narrative, "ai", false);
                 await api("updateGame", { roomId: currentRoom.id, currentScene: narrative });
+                // 简单检测是否获得物品
                 if (narrative.includes("获得") && (narrative.includes("药水") || narrative.includes("金币") || narrative.includes("武器"))) {
                     await addItemToInventory("治疗药水", 1);
                 }
@@ -803,6 +812,7 @@
                 return;
             }
             
+            // 回合切换
             const playerList = currentRoom.players;
             const currentIdx = playerList.indexOf(currentPlayer.id);
             if (currentIdx === -1) {
