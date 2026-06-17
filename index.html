@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 服务端主持版</title>
+    <title>🐉 AI跑团 · 前端Key版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -174,7 +174,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 服务端主持版</h1>
+    <h1>🐉 AI跑团 · 前端Key版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -244,7 +244,8 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    // 前端不再存储 API Key，全部由 Worker 处理
+    // ⚠️ 请在这里填入你的 Groq API Key（所有玩家共用）
+    const GROQ_API_KEY = "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";
     
     let currentPlayer = null;
     let currentRoom = null;
@@ -331,10 +332,13 @@
     
     async function api(action, data) {
         try {
-            // 不再携带 Authorization，由 Worker 使用环境变量
+            // 始终携带 Authorization
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${GROQ_API_KEY}`
+                },
                 body: JSON.stringify({ action, data })
             });
             return await res.json();
@@ -586,7 +590,6 @@
             showPanel("game");
             renderGameUI();
             const intro = await generateRandomOpening();
-            // 将开场同步到服务器，让所有玩家看到
             await api("updateGame", { roomId: currentRoom.id, currentScene: intro });
             addLog(intro, "ai", false);
             addLog("你可以行动。", "system", false);
@@ -879,6 +882,11 @@
     syncInterval = setInterval(syncLoop, 1000);
     showPanel("login");
     addLog("🎲 欢迎来到 AI 跑团！创建角色并分配属性点。", "system", true);
+    if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
+        addLog("⚠️ 未配置 Groq API Key，AI 描述将使用简化模式。请在代码中填入你的 Key。", "system", true);
+    } else {
+        addLog("✅ Groq API Key 已配置，AI 主持人已就绪！", "system", true);
+    }
 </script>
 </body>
 </html>
