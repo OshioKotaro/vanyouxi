@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>🐉 AI跑团 · 最终精简版</title>
+    <title>🐉 AI跑团 · 服务端主持版</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -174,7 +174,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>🐉 AI跑团 · 最终精简版</h1>
+    <h1>🐉 AI跑团 · 服务端主持版</h1>
     <div class="status-bar">
         <span id="syncStatus">🔄 连接中...</span>
         <span id="playerNameDisplay"></span>
@@ -244,7 +244,7 @@
 
 <script>
     const WORKER_URL = "https://paotuan.xianzhi-hong.workers.dev";
-    const GROQ_API_KEY = "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";  // 请填入你的 Groq API Key
+    // 前端不再存储 API Key，全部由 Worker 处理
     
     let currentPlayer = null;
     let currentRoom = null;
@@ -320,12 +320,18 @@
         p.scrollIntoView({ behavior: "smooth", block: "nearest" });
         while (logDiv.children.length > 200) logDiv.removeChild(logDiv.firstChild);
         if (!skipSync && currentPlayer) {
-            api("addMessage", { type, playerName: currentPlayer.name, content });
+            api("addMessage", {
+                playerId: currentPlayer.id,
+                type,
+                playerName: currentPlayer.name,
+                content
+            });
         }
     }
     
     async function api(action, data) {
         try {
+            // 不再携带 Authorization，由 Worker 使用环境变量
             const res = await fetch(`${WORKER_URL}/action`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -424,36 +430,14 @@
     async function generateNarrative(prompt, extraContext = "") {
         const history = getLogHistory();
         const systemPrompt = "你是DND地下城主。直接描述结果，禁止输出选项、列表、'可能的结果'、'建议'或提问。剧情简洁直接，不绕弯子。";
-        try {
-            const res = await fetch(`${WORKER_URL}/action`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
-                body: JSON.stringify({ 
-                    action: "generateNarrative", 
-                    data: { prompt, history, extraContext, systemPrompt } 
-                })
-            });
-            const result = await res.json();
-            return result.success ? result.text : prompt;
-        } catch(e) {
-            return "你环顾四周，没有特别的事情发生。";
-        }
+        const res = await api("generateNarrative", { prompt, history, extraContext, systemPrompt });
+        return res.text || "你环顾四周，没有特别的事情发生。";
     }
     
     async function generateBattleDescription(playerName, playerClass, actionDesc, hitResult, damage, targetName, targetHP) {
         const systemPrompt = "直接描述战斗结果，不要给出选项或提问。";
-        const prompt = `${playerName}(${playerClass}) ${actionDesc}，${hitResult ? "命中" : "未命中"}，造成${damage}伤害。${targetName}剩余HP ${targetHP}。`;
-        try {
-            const res = await fetch(`${WORKER_URL}/action`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
-                body: JSON.stringify({ action: "generateBattleDesc", data: { playerName, playerClass, actionDesc, hitResult, damage, systemPrompt } })
-            });
-            const result = await res.json();
-            return result.description || `${playerName}的攻击！`;
-        } catch(e) {
-            return `${playerName}的攻击！`;
-        }
+        const res = await api("generateBattleDesc", { playerName, playerClass, actionDesc, hitResult, damage, systemPrompt });
+        return res.description || `${playerName}的攻击！`;
     }
     
     async function resetRoomState() {
@@ -462,6 +446,11 @@
             const res = await fetch(`${WORKER_URL}/state`);
             const data = await res.json();
             if (data.messages && data.messages.length) {
+                for (let msg of data.messages) {
+                    if (msg.playerId === currentPlayer?.id) {
+                        displayedMessageIds.add(msg.id);
+                    }
+                }
                 const maxId = Math.max(...data.messages.map(m => m.id), 0);
                 lastMessageId = maxId;
             }
@@ -530,19 +519,22 @@
             }
         }
         if (currentPlayer && currentPlayer.roomId && data.rooms[currentPlayer.roomId]) {
-            currentRoom = data.rooms[currentPlayer.roomId];
-            if (currentRoom.status === "playing" && !gameActive && !gameOver) {
-                gameActive = true;
-                showPanel("game");
-                renderGameUI();
-                if (currentRoom.currentScene && !window._sceneShown) {
-                    addLog(currentRoom.currentScene, "ai", true);
-                    window._sceneShown = true;
+            const newRoom = data.rooms[currentPlayer.roomId];
+            if (JSON.stringify(currentRoom) !== JSON.stringify(newRoom)) {
+                currentRoom = newRoom;
+                if (currentRoom.status === "playing" && !gameActive && !gameOver) {
+                    gameActive = true;
+                    showPanel("game");
+                    renderGameUI();
+                    if (currentRoom.currentScene && !window._sceneShown) {
+                        addLog(currentRoom.currentScene, "ai", true);
+                        window._sceneShown = true;
+                    }
+                } else if (currentRoom.status === "waiting") {
+                    renderRoomUI();
+                } else if (gameActive && !gameOver) {
+                    renderGameUI();
                 }
-            } else if (currentRoom.status === "waiting") {
-                renderRoomUI();
-            } else if (gameActive && !gameOver) {
-                renderGameUI();
             }
         } else {
             document.getElementById("roomInfo").innerHTML = "<div>暂无房间</div>";
@@ -594,6 +586,8 @@
             showPanel("game");
             renderGameUI();
             const intro = await generateRandomOpening();
+            // 将开场同步到服务器，让所有玩家看到
+            await api("updateGame", { roomId: currentRoom.id, currentScene: intro });
             addLog(intro, "ai", false);
             addLog("你可以行动。", "system", false);
         } else {
@@ -858,11 +852,12 @@
                     }
                 }
             }
+            // 同步消息（使用 playerId 判断）
             if (data.messages && data.messages.length) {
                 for (let msg of data.messages) {
                     if (msg.id > lastMessageId) {
                         lastMessageId = msg.id;
-                        if (msg.playerName !== currentPlayer?.name) {
+                        if (msg.playerId !== currentPlayer?.id) {
                             addLog(msg.content, msg.type, true, msg.id);
                         } else {
                             displayedMessageIds.add(msg.id);
@@ -884,11 +879,6 @@
     syncInterval = setInterval(syncLoop, 1000);
     showPanel("login");
     addLog("🎲 欢迎来到 AI 跑团！创建角色并分配属性点。", "system", true);
-    if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_你的GroqKey") {
-        addLog("⚠️ 未配置 Groq API Key，AI 描述将使用简化模式。请在代码中填入你的 Key。", "system", true);
-    } else {
-        addLog("✅ Groq API Key 已配置，AI 主持人已就绪！", "system", true);
-    }
 </script>
 </body>
 </html>
